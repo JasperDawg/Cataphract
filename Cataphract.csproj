@@ -1,46 +1,42 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<!-- Import tModLoader mod properties -->
-	<Import Project="..\tModLoader.targets" />
+	<Import Project="../broken-wings-freeze/src/Mod.targets" />
 
-	<!-- General -->
-	<PropertyGroup>
-		<LangVersion>latest</LangVersion>
-        <Nullable>enable</Nullable>
-	</PropertyGroup>
+	    <PropertyGroup>
+        <AssemblyName>Cataphract</AssemblyName>
+        <RootNamespace>Cataphract</RootNamespace>
 
-	<!-- References -->
-	<ItemGroup>
-		
-	</ItemGroup>
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
 
-	    <ItemGroup>
-        <!-- Annotations for IDE hints. -->
-        <PackageReference Include="JetBrains.Annotations" Version="2024.3.0"/>
+        <GenerateDocumentationFile>True</GenerateDocumentationFile>
+		        <TargetFramework>net8.0</TargetFramework>
+        </PropertyGroup>
 
-        <!-- Use Fody to weave IL after regular building. -->
-        <!-- <PackageReference Include="Fody" Version="6.9.1"/> -->
+        <Project Sdk="Microsoft.NET.Sdk">
 
-        <!-- Current assembly publicizer of choice. -->
-        <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="all" ExcludeAssets="runtime"/>
+    <Import Project="$(BrokenWingsRoot)src\Mod.targets"/>
+
+    <PropertyGroup>
+        <AssemblyName>Daybreak</AssemblyName>
+        <RootNamespace>Daybreak</RootNamespace>
+
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
+
+        <GenerateDocumentationFile>True</GenerateDocumentationFile>
+        
+        <LangVersion>13</LangVersion>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <UseFeature_DynamicModCalls>enable</UseFeature_DynamicModCalls>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Publicize Include="FNA" IncludeCompilerGeneratedMembers="false" IncludeVirtualMembers="false"/>
+        <Publicize Include="ReLogic" IncludeCompilerGeneratedMembers="false" IncludeVirtualMembers="false"/>
     </ItemGroup>
 
-    <!-- Taken from: <https://github.com/krafs/Publicizer/pull/128>.  This is
-         used to fix an annoying warning because the publicizer we're using
-         emits a type also included by MonoMod.Utils. -->
-    <Target Name="RemoveIgnoresAccessChecksToAttributeCs" AfterTargets="PublicizeAssemblies">
-        <ItemGroup>
-            <FilesToRemove Include="@(Compile)" Condition="'%(Filename)' == 'IgnoresAccessChecksToAttribute'"/>
-        </ItemGroup>
-        <ItemGroup>
-            <Compile Remove="@(FilesToRemove)"/>
-        </ItemGroup>
-    </Target>
-
-    <ItemGroup Label="Publicized assemblies">
-        <!-- It's reasonable to publicize tModLoader.  Don't include
-             compiler-generated members since it breaks events and some other
-             stuff. -->
-        <Publicize Include="tModLoader" IncludeCompilerGeneratedMembers="false" IncludeVirtualMembers="false"/>
-    </ItemGroup>
 </Project>

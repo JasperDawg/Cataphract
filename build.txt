@@ -1,0 +1,3 @@
+displayName = Conquest in Cataphract
+author = Verminoid Creature
+version = 0.1

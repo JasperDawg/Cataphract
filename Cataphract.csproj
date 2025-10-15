@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<!-- Import tModLoader mod properties -->
-	<Import Project="../broken-wings-freeze/src/Mod.targets" />
+	<Import Project="../../broken-wings-freeze/src/Mod.targets" />
 
 	    <PropertyGroup>
         <AssemblyName>Cataphract</AssemblyName>
@@ -10,33 +10,13 @@
         <Version>1.0.0</Version>
         <AssemblyVersion>1.0.0</AssemblyVersion>
 
-        <GenerateDocumentationFile>True</GenerateDocumentationFile>
 		        <TargetFramework>net8.0</TargetFramework>
         </PropertyGroup>
-
-        <Project Sdk="Microsoft.NET.Sdk">
-
-    <Import Project="$(BrokenWingsRoot)src\Mod.targets"/>
-
-    <PropertyGroup>
-        <AssemblyName>Daybreak</AssemblyName>
-        <RootNamespace>Daybreak</RootNamespace>
-
-        <Version>1.0.0</Version>
-        <AssemblyVersion>1.0.0</AssemblyVersion>
-
-        <GenerateDocumentationFile>True</GenerateDocumentationFile>
-        
-        <LangVersion>13</LangVersion>
-    </PropertyGroup>
-
-    <PropertyGroup>
-        <UseFeature_DynamicModCalls>enable</UseFeature_DynamicModCalls>
-    </PropertyGroup>
 
     <ItemGroup>
         <Publicize Include="FNA" IncludeCompilerGeneratedMembers="false" IncludeVirtualMembers="false"/>
         <Publicize Include="ReLogic" IncludeCompilerGeneratedMembers="false" IncludeVirtualMembers="false"/>
     </ItemGroup>
+
 
 </Project>

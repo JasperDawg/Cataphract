@@ -1,1 +1,11 @@
+Items: {
+	UnstableRecallium: {
+		DisplayName: Unstable Recallium
+		Tooltip: ""
+	}
 
+	WarpGeode: {
+		DisplayName: Warp Geode
+		Tooltip: ""
+	}
+}

@@ -1,4 +1,4 @@
-![The Main Menu Logo](assets/ModLogo.png)
+![The Main Menu Logo](Assets/ModLogo.png)
 # The mod from outer space..
 A content mod with no specific theme but adding fun content with none of that dumb subworld shit lmao
 

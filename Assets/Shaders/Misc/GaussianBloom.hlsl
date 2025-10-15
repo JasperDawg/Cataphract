@@ -1,0 +1,26 @@
+#include "../blurs.h"
+
+sampler uImage0 : register(s0);
+float uTime;
+float uHoverIntensity;
+float uPixel;
+float uColorResolution;
+float uGrayness;
+float uSpeed;
+float4 uSource;
+float3 uInColor;
+
+float4 main(float4 sampleColor : COLOR0, float2 coords : TEXCOORD0) : COLOR0
+{
+    return gauss_bloom(uImage0, coords, AspectCorrectedGBlurScale(uSource, 1.0f), 32, 1., 0.3f);
+}
+
+#ifdef FX
+technique Technique1
+{
+    pass BloomShader
+    {
+        PixelShader = compile ps_3_0 main();
+    }
+}
+#endif // FX

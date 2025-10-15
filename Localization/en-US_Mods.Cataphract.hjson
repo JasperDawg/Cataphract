@@ -1,11 +1,17 @@
 Items: {
 	UnstableRecallium: {
 		DisplayName: Unstable Recallium
-		Tooltip: ""
+		Tooltip: Gellar field not included
 	}
 
 	WarpGeode: {
 		DisplayName: Warp Geode
-		Tooltip: ""
+		Tooltip: Retrieved from the immaterial
+
+		Types: {
+			Type0: Has a metallic shine
+			Type1: Seems very resourceful
+			Type2: Has an enlightening aura
+		}
 	}
 }

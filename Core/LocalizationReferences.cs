@@ -179,6 +179,99 @@ internal static class LocalizationReferences
                             return Language.GetTextValue(KEY + '.' + childKey, values);
                         }
                     }
+
+                    public static class Types
+                    {
+                        public const string KEY = "Mods.Cataphract.Items.WarpGeode.Types";
+
+                        public static LocalizedText GetChildText(string childKey)
+                        {
+                            return Language.GetText(KEY + '.' + childKey);
+                        }
+
+                        public static string GetChildTextValue(string childKey, params object?[] values)
+                        {
+                            return Language.GetTextValue(KEY + '.' + childKey, values);
+                        }
+
+                        public static class Type0
+                        {
+                            public const string KEY = "Mods.Cataphract.Items.WarpGeode.Types.Type0";
+                            public const int ARG_COUNT = 0;
+
+                            public static LocalizedText GetText()
+                            {
+                                return Language.GetText(KEY);
+                            }
+
+                            public static string GetTextValue()
+                            {
+                                return Language.GetTextValue(KEY);
+                            }
+
+                            public static LocalizedText GetChildText(string childKey)
+                            {
+                                return Language.GetText(KEY + '.' + childKey);
+                            }
+
+                            public static string GetChildTextValue(string childKey, params object?[] values)
+                            {
+                                return Language.GetTextValue(KEY + '.' + childKey, values);
+                            }
+                        }
+
+                        public static class Type1
+                        {
+                            public const string KEY = "Mods.Cataphract.Items.WarpGeode.Types.Type1";
+                            public const int ARG_COUNT = 0;
+
+                            public static LocalizedText GetText()
+                            {
+                                return Language.GetText(KEY);
+                            }
+
+                            public static string GetTextValue()
+                            {
+                                return Language.GetTextValue(KEY);
+                            }
+
+                            public static LocalizedText GetChildText(string childKey)
+                            {
+                                return Language.GetText(KEY + '.' + childKey);
+                            }
+
+                            public static string GetChildTextValue(string childKey, params object?[] values)
+                            {
+                                return Language.GetTextValue(KEY + '.' + childKey, values);
+                            }
+                        }
+
+                        public static class Type2
+                        {
+                            public const string KEY = "Mods.Cataphract.Items.WarpGeode.Types.Type2";
+                            public const int ARG_COUNT = 0;
+
+                            public static LocalizedText GetText()
+                            {
+                                return Language.GetText(KEY);
+                            }
+
+                            public static string GetTextValue()
+                            {
+                                return Language.GetTextValue(KEY);
+                            }
+
+                            public static LocalizedText GetChildText(string childKey)
+                            {
+                                return Language.GetText(KEY + '.' + childKey);
+                            }
+
+                            public static string GetChildTextValue(string childKey, params object?[] values)
+                            {
+                                return Language.GetTextValue(KEY + '.' + childKey, values);
+                            }
+                        }
+                    }
                 }
             }
         }

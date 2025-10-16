@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using Terraria.ModLoader.IO;
 using Terraria.Localization;
 using Terraria.GameContent.ItemDropRules;
+using System.Linq;
 namespace Cataphract.Content.Items
 {
     public class UnstableRecallium : ModItem
@@ -102,6 +103,20 @@ namespace Cataphract.Content.Items
 
         const int teleportMax = 180;
         const int maxDist = 1000;
+        const int potionsToAdd = 3;
+        public override IEnumerable<Item> AddStartingItems(bool mediumCoreDeath)
+        {
+            if (mediumCoreDeath) return Enumerable.Empty<Item>();
+            
+            var items = new List<Item>();
+
+            for (int i = 0; i < potionsToAdd; i++)
+            {
+                items.Add(new Item(ModContent.ItemType<UnstableRecallium>()));
+            }
+
+            return items;
+        }
         public override void DrawEffects(PlayerDrawSet drawInfo, ref float r, ref float g, ref float b, ref float a, ref bool fullBright)
         {
             if (teleportin > 0 && teleporting)
@@ -112,6 +127,11 @@ namespace Cataphract.Content.Items
                 var spawn = new Vector2(Main.spawnTileX * 16 + 8, Main.spawnTileY * 16 - Player.height);
                 var dist = 1.0f - Math.Clamp(maxDist / Vector2.Distance(spawn, Player.Center), 0, 1);
                 dust.velocity = Player.DirectionTo(new Vector2(Main.spawnTileX * 16 + 8, Main.spawnTileY * 16 - Player.height)) * (teleportMax - teleportin) * dist;
+
+                r /= color.X;
+                g /= color.Y;
+                b /= color.Z;
+                Lighting.AddLight(Player.Center, color * 0.5f);
             }
             base.DrawEffects(drawInfo, ref r, ref g, ref b, ref a, ref fullBright);
         }
@@ -217,9 +237,10 @@ namespace Cataphract.Content.Items
                     }
                 case GeodeType.Enlightening:
                     {
-                        player.AddBuff(BuffID.Shine, 60 * 5);
-                        player.AddBuff(BuffID.Spelunker, 60 * 5);
-                        player.AddBuff(BuffID.NightOwl, 60 * 5);
+                        var amount = (int)TimeSpan.FromMinutes(5).TotalSeconds * 60;
+                        player.AddBuff(BuffID.Shine, amount);
+                        player.AddBuff(BuffID.Spelunker, amount);
+                        player.AddBuff(BuffID.NightOwl, amount);
                         break;
                     }
             }

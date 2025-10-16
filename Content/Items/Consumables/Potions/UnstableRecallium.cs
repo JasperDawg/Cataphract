@@ -153,11 +153,6 @@ namespace Cataphract.Content.Items
         {
             Item.width = 20;
             Item.height = 20;
-            Item.useStyle = ItemUseStyleID.HoldUp;
-            Item.useAnimation = 32;
-            Item.useTime = 15;
-            Item.healMana = 100;
-            Item.UseSound = Assets.Audio.Misc.UnstableRecall_Arrive.Asset;
             Item.rare = ItemRarityID.Orange;
         }
 

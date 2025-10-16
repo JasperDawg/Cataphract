@@ -2,6 +2,7 @@ Items: {
 	UnstableRecallium: {
 		DisplayName: Unstable Recallium
 		Tooltip: Gellar field not included
+		WarpFar: You appear to have brought something with you.
 	}
 
 	WarpGeode: {

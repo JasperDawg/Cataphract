@@ -14,7 +14,7 @@ using Terraria.Graphics.Shaders;
 using System.Collections.Generic;
 using Terraria.ModLoader.IO;
 using Terraria.Localization;
-
+using Terraria.GameContent.ItemDropRules;
 namespace Cataphract.Content.Items
 {
     public class UnstableRecallium : ModItem
@@ -33,10 +33,11 @@ namespace Cataphract.Content.Items
             Item.height = 20;
             Item.useStyle = ItemUseStyleID.HoldUp;
             Item.useAnimation = 180;
-            Item.useTime = 15;
+            Item.useTime = 180;
             Item.consumable = true;
             Item.healLife = 100;
             Item.UseSound = Assets.Audio.Misc.UnstableRecall_Channel.Asset;
+            Item.rare = ItemRarityID.Orange;
         }
         ref WrapperShaderData<Assets.Shaders.Misc.InversePulse.Parameters>? pulse => ref UnstableRecalliumEffectLoader._inversePulseShader;
         ref WrapperShaderData<Assets.Shaders.Misc.WarpBloom.Parameters>? bloom => ref UnstableRecalliumEffectLoader._bloomShader;
@@ -86,29 +87,55 @@ namespace Cataphract.Content.Items
             DrawPotion(spriteBatch, drawPosition, itemFrame, lightColor, alphaColor, drawOrigin, scale, inWorld: true, effectScale: 8);
             return false;
         }
+
+        public override bool? UseItem(Player player)
+        {
+            player.GetModPlayer<UnstableRecallPlayer>().teleportin = 180;
+            return true;
+        }
     }
 
     public class UnstableRecallPlayer : ModPlayer
     {
-        public override void ModifyDrawInfo(ref PlayerDrawSet drawInfo)
+        public int teleportin;
+        bool teleporting;
+
+        const int teleportMax = 180;
+        const int maxDist = 1000;
+        public override void DrawEffects(PlayerDrawSet drawInfo, ref float r, ref float g, ref float b, ref float a, ref bool fullBright)
         {
-            for (int i = 0; i < drawInfo.DrawDataCache.Count; i++)
+            if (teleportin > 0 && teleporting)
             {
-                if (drawInfo.DrawDataCache[i].texture == TextureAssets.Item[ModContent.ItemType<UnstableRecallium>()].Value)
-                {
-                    var drawData = drawInfo.DrawDataCache[i];
-                    drawData.shader = GameShaders.Armor.GetShaderIdFromItemId(ModContent.ItemType<UnstableRecallium>());
-                    drawInfo.DrawDataCache[i] = drawData;
-                }
+                var color = UnstableRecalliumEffectLoader.RecolorGreyscale(new Vector3(1f, 0.5f, 0.2f));
+                var colorMultiplied = new Color(color.X, color.Y, color.Z) * 1;
+                var dust = Dust.NewDustDirect(Player.position + Main.rand.NextVector2Circular(60f, 60f), Player.width, Player.height, DustID.FireworksRGB, 0f, 0f, 100, colorMultiplied, 1.5f);
+                var spawn = new Vector2(Main.spawnTileX * 16 + 8, Main.spawnTileY * 16 - Player.height);
+                var dist = 1.0f - Math.Clamp(maxDist / Vector2.Distance(spawn, Player.Center), 0, 1);
+                dust.velocity = Player.DirectionTo(new Vector2(Main.spawnTileX * 16 + 8, Main.spawnTileY * 16 - Player.height)) * (teleportMax - teleportin) * dist;
             }
-            base.ModifyDrawInfo(ref drawInfo);
+            base.DrawEffects(drawInfo, ref r, ref g, ref b, ref a, ref fullBright);
         }
-
-        public override void ModifyDrawLayerOrdering(IDictionary<PlayerDrawLayer, PlayerDrawLayer.Position> positions)
+        public override void PreUpdate()
         {
+            if (teleportin > 0) teleporting = true;
 
-
-            base.ModifyDrawLayerOrdering(positions);
+            if (teleportin-- == 0 && teleporting)
+            {
+                Vector2 spawn = new Vector2(Main.spawnTileX * 16 + 8, Main.spawnTileY * 16 - Player.height);
+                if (Vector2.Distance(spawn, Player.Center) > maxDist)
+                {
+                    Item.NewItem(Player.GetSource_Misc("UnstableRecallium"), spawn, Player.width, Player.height, ModContent.ItemType<WarpGeode>());
+                    Main.NewText(Language.GetTextValue(LocalizationReferences.Mods.Cataphract.Items.UnstableRecallium.WarpFar.KEY), Color.OrangeRed);
+                }
+                Player.Teleport(spawn, TeleportationStyleID.DebugTeleport);
+                teleporting = false;
+                for (int i = 0; i < 20; i++)
+                {
+                    Dust.NewDustDirect(Player.position, Player.width, Player.height, DustID.FireworksRGB, 0f, 0f, 100, Color.Pink, 1.5f);
+                }
+                SoundEngine.PlaySound(Assets.Audio.Misc.UnstableRecall_Arrive.Asset, Player.Center);
+            }
+            base.PreUpdate();
         }
     }
 
@@ -117,6 +144,11 @@ namespace Cataphract.Content.Items
         public override string Texture => Assets.Images.Content.Items.Potions.WarpGeode.KEY;
         bool Initialized = false;
         public uint type;
+        public override void SetStaticDefaults()
+        {
+            ItemID.Sets.OpenableBag[Item.type] = true;
+            base.SetStaticDefaults();
+        }
         public override void SetDefaults()
         {
             Item.width = 20;
@@ -124,9 +156,81 @@ namespace Cataphract.Content.Items
             Item.useStyle = ItemUseStyleID.HoldUp;
             Item.useAnimation = 32;
             Item.useTime = 15;
-            Item.consumable = true;
             Item.healMana = 100;
             Item.UseSound = Assets.Audio.Misc.UnstableRecall_Arrive.Asset;
+            Item.rare = ItemRarityID.Orange;
+        }
+
+        public override bool CanRightClick()
+        {
+            return true;
+        }
+
+        public class CustomCondition : IItemDropRuleCondition
+        {
+            private readonly string _key;
+            private readonly Func<bool> _condition;
+
+            public CustomCondition(string key, Func<bool> condition)
+            {
+                _key = key;
+                _condition = condition;
+            }
+
+            public bool CanDrop(DropAttemptInfo info)
+            {
+                bool cond = _condition();
+                return cond;
+            }
+
+            public bool CanShowItemDropInUI()
+            {
+                return true;
+            }
+
+            public string GetConditionDescription()
+            {
+                return Language.GetTextValue(_key);
+            }
+        }
+
+        enum GeodeType
+        {
+            Shiny,
+            Resourceful,
+            Enlightening
+        }
+        public override void RightClick(Player player)
+        {
+            switch ((GeodeType)type)
+            {
+                case GeodeType.Shiny:
+                    {
+                        for (int i = 0; i < 4; i++)
+                        {
+                            int choice = Main.rand.NextFromList(new int[] { ItemID.GoldBar, ItemID.PlatinumBar, ItemID.MeteoriteBar });
+                            int amount = Main.rand.Next(5, 20);
+                            player.QuickSpawnItem(player.GetSource_OpenItem(Item.type), choice, amount);
+                        }
+                        break;
+                    }
+                case GeodeType.Resourceful:
+                    {
+                        int choice = Main.rand.NextFromList(new int[] { ItemID.ManaCrystal, ItemID.LifeCrystal });
+                        player.QuickSpawnItem(player.GetSource_OpenItem(Item.type), choice, 1);
+                        break;
+                    }
+                case GeodeType.Enlightening:
+                    {
+                        player.AddBuff(BuffID.Shine, 60 * 5);
+                        player.AddBuff(BuffID.Spelunker, 60 * 5);
+                        player.AddBuff(BuffID.NightOwl, 60 * 5);
+                        break;
+                    }
+            }
+            SoundEngine.TryGetActiveSound(SoundEngine.PlaySound(Assets.Audio.Misc.UnstableRecall_Arrive.Asset), out var sound);
+            sound.Pitch += Main.rand.NextFloat(-0.2f, 0.2f);
+            base.RightClick(player);
         }
 
         public override void SaveData(TagCompound tag)
@@ -172,7 +276,7 @@ namespace Cataphract.Content.Items
                 type = (uint)Main.rand.Next(3);
                 Initialized = true;
             }
-            
+
             base.UpdateInventory(player);
         }
 

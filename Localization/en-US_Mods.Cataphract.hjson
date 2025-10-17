@@ -15,4 +15,11 @@ Items: {
 			Type2: Has an enlightening aura
 		}
 	}
+
+	NeanderthalBlaster: {
+		DisplayName: Neanderthal Blaster
+		Tooltip: "Caveman Technology"
+	}
 }
+
+Projectiles.NeanderthalBlasterProjectile.DisplayName: Neanderthal Blaster Projectile

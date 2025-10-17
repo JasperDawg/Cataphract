@@ -48,6 +48,18 @@ internal static class AssetReferences
                 }
             }
 
+            public static class Particles
+            {
+                public static class Circular
+                {
+                    public const string KEY = "Cataphract/Assets/Images/Particles/Circular";
+
+                    public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                    private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                }
+            }
+
             public static class Content
             {
                 public static class Items
@@ -70,6 +82,39 @@ internal static class AssetReferences
                             public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
 
                             private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                        }
+                    }
+
+                    public static class Weapons
+                    {
+                        public static class Misc
+                        {
+                            public static class StupidGun
+                            {
+                                public const string KEY = "Cataphract/Assets/Images/Content/Items/Weapons/Misc/StupidGun";
+
+                                public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                                private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                            }
+
+                            public static class StupidGun_Projectiles
+                            {
+                                public const string KEY = "Cataphract/Assets/Images/Content/Items/Weapons/Misc/StupidGun_Projectiles";
+
+                                public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                                private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                            }
+
+                            public static class StupidGun_Critter
+                            {
+                                public const string KEY = "Cataphract/Assets/Images/Content/Items/Weapons/Misc/StupidGun_Critter";
+
+                                public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                                private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                            }
                         }
                     }
                 }
@@ -316,6 +361,60 @@ internal static class AssetReferences
                     public static WrapperShaderData<Parameters> CreateArmorBasic()
                     {
                         return new WrapperShaderData<Parameters>(Asset, "ArmorBasic");
+                    }
+                }
+
+                public static class BlasterSDF
+                {
+                    public sealed class Parameters : IShaderParameters
+                    {
+                        public Microsoft.Xna.Framework.Graphics.Texture2D? uImage0 { get; set; }
+
+                        public float uTime { get; set; }
+
+                        public float uHoverIntensity { get; set; }
+
+                        public float uPixel { get; set; }
+
+                        public float uColorResolution { get; set; }
+
+                        public float uGrayness { get; set; }
+
+                        public float uSpeed { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector4 uSource { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector3 uInColor { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector4[]? Particles { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector3[]? ParticleColors { get; set; }
+
+                        public void Apply(Microsoft.Xna.Framework.Graphics.EffectParameterCollection parameters)
+                        {
+                            parameters["uImage0"]?.SetValue(uImage0);
+                            parameters["uTime"]?.SetValue(Terraria.Main.GlobalTimeWrappedHourly);
+                            parameters["uHoverIntensity"]?.SetValue(uHoverIntensity);
+                            parameters["uPixel"]?.SetValue(uPixel);
+                            parameters["uColorResolution"]?.SetValue(uColorResolution);
+                            parameters["uGrayness"]?.SetValue(uGrayness);
+                            parameters["uSpeed"]?.SetValue(uSpeed);
+                            parameters["uSource"]?.SetValue(uSource);
+                            parameters["uInColor"]?.SetValue(uInColor);
+                            parameters["Particles"]?.SetValue(Particles);
+                            parameters["ParticleColors"]?.SetValue(ParticleColors);
+                        }
+                    }
+
+                    public const string KEY = "Cataphract/Assets/Shaders/Misc/BlasterSDF";
+
+                    public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect> Asset => lazy.Value;
+
+                    private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Effect>(KEY, ReLogic.Content.AssetRequestMode.ImmediateLoad));
+
+                    public static WrapperShaderData<Parameters> CreateSDFShader()
+                    {
+                        return new WrapperShaderData<Parameters>(Asset, "SDFShader");
                     }
                 }
             }

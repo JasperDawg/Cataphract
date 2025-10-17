@@ -308,7 +308,6 @@ namespace Cataphract.Content.Items
             Debug.Assert(pulse is not null);
             Debug.Assert(bloom is not null);
 
-
             var noiseSize = new Vector2(Assets.Images.Noise.Noise1.Asset.Width(), Assets.Images.Noise.Noise1.Asset.Height());
 
             pulse.Parameters.uTime = Main.GlobalTimeWrappedHourly;

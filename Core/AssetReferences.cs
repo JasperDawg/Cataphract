@@ -138,6 +138,41 @@ internal static class AssetReferences
 
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/UnstableRecall_Channel");
                 }
+
+                public static class StupidGun_HeavyFire
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_HeavyFire";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_HeavyFire");
+                }
+
+                public static class StupidGun_HeavyFire_Critter
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_HeavyFire_Critter";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_HeavyFire_Critter");
+                }
+
+                public static class StupidGun_RegularFire
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_RegularFire";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire");
+                }
+
+                public static class StupidGun_RegularFire_Critter1
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter1";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter1");
+                }
+
+                public static class StupidGun_RegularFire_Critter2
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter2";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter2");
+                }
             }
         }
 

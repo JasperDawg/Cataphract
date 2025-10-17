@@ -51,7 +51,7 @@ float4 main(float4 sampleColor : COLOR0, float2 coords : VPOS) : COLOR0
         }
     }
 
-    float outline = 2 / uSource.y;
+    float outline = 1 / uSource.y;
     float colorBrightness = (cumulativeColor.r + cumulativeColor.g + cumulativeColor.b) / 3.0;
 
     float4 outlineColor = lerp(float4(cumulativeColor.rgb, 1.0), float4(1.0, 1.0, 1.0, 1.0), colorBrightness * 1.5);

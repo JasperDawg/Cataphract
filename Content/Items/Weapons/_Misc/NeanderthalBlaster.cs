@@ -29,7 +29,10 @@ public class NeanderthalBlaster : ModItem
         Item.noMelee = true;
         Item.value = Item.buyPrice(silver: 50);
         Item.rare = ItemRarityID.Blue;
-        Item.UseSound = SoundID.Item11;
+        Item.UseSound = Assets.Audio.Misc.StupidGun_RegularFire.Asset with {
+            Volume = 0.5f,
+            PitchVariance = 0.2f
+        };
         Item.shoot = ProjectileID.Bullet;
         Item.shootSpeed = 12f;
         Item.useAmmo = AmmoID.Bullet;
@@ -45,9 +48,9 @@ public class NeanderthalBlaster : ModItem
 
     public override bool Shoot(Player player, EntitySource_ItemUse_WithAmmo source, Vector2 position, Vector2 velocity, int type, int damage, float knockback)
     {
-        for (int i = 0; i < 60; i++)
+        for (int i = 0; i < 15; i++)
         {
-            NeanderthalBlasterSDFParticles.AddParticle(player.Center + Main.rand.NextVector2Circular(100, 100), 10 + Main.rand.Next(-6, 10));
+            NeanderthalBlasterSDFParticles.AddParticle(player.Center + Main.rand.NextVector2Circular(10, 10) + Vector2.Normalize(velocity) * 10, 2 + Main.rand.Next(-1, 1), velocity.RotatedByRandom(MathHelper.PiOver4) * Main.rand.NextFloat(0.3f, 1f));
         }
         return base.Shoot(player, source, position, velocity, type, damage, knockback);
     }
@@ -107,6 +110,8 @@ public class NeanderthalBlaster : ModItem
         Vector2 consistentCenterAnchor = player.itemRotation.ToRotationVector2() * (heldItemFrame.Size().X / -2f - 10f) * player.direction;
 
         Vector2 offsetOrigin = new Vector2(-(heldItemFrame.Size().X / 2), -(heldItemFrame.Size().Y / 2 - 2));
+
+        offsetOrigin.X += MathHelper.SmoothStep(-10, 10, percentDone);
         offsetOrigin.X *= player.direction;
         offsetOrigin.Y *= player.gravDir;
 
@@ -154,7 +159,7 @@ public class NeanderthalBlasterSDFParticles : ModSystem
         public Vector2 position;
         public Vector3 color;
         public Vector2 velocity;
-        public float size;
+        public float maxSize;
         public int timeAlive;
         public int maxTimeAlive;
     }
@@ -178,21 +183,21 @@ public class NeanderthalBlasterSDFParticles : ModSystem
     }
     private static Texture2D Noise => ModContent.Request<Texture2D>(Assets.Images.Particles.Circular.KEY).Value;
 
-    public static void AddParticle(Vector2 position, int size)
+    public static void AddParticle(Vector2 position, int size, Vector2 velocity = default)
     {
         for (int i = 0; i < particles.Length; i++)
         {
             if (particles.Span[i].timeAlive <= 0)
             {
-                int number = Main.rand.Next(120, 280);
+                int number = Main.rand.Next(20, 150);
                 particles.Span[i] = new Particle()
                 {
                     position = position,
-                    size = size,
+                    maxSize = size,
                     timeAlive = number,
                     maxTimeAlive = number,
                     color = new Vector3(0.3f, 0.3f, 0.4f),
-                    velocity = Main.rand.NextVector2Circular(1f, 1f) * Main.rand.NextFloat(1.5f, 8f)
+                    velocity = velocity == default ? Main.rand.NextVector2Circular(1f, 1f) * Main.rand.NextFloat(1.5f, 8f) : velocity
                 };
                 break;
             }
@@ -225,18 +230,27 @@ public class NeanderthalBlasterSDFParticles : ModSystem
             if (particles.Span[i].timeAlive > 0)
             {
                 particles.Span[i].timeAlive--;
-                particles.Span[i].size *= 0.93f;
                 particles.Span[i].position += particles.Span[i].velocity;
                 particles.Span[i].velocity.Y -= 0.05f;
                 particles.Span[i].velocity *= Main.rand.NextFloat(0.97f, 0.995f);
                 particles.Span[i].color = Vector3.Lerp(endColor, startColor, particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive);
-                if (particles.Span[i].timeAlive <= 0 || particles.Span[i].size <= 0)
+
+                if (particles.Span[i].timeAlive % 15 == 0 && Main.rand.NextBool(2))
                 {
-                    particles.Span[i].timeAlive = 0;
-                    particles.Span[i].size = 0;
+                    Color multipliedColor = new Color(particles.Span[i].color.X, particles.Span[i].color.Y, particles.Span[i].color.Z);
+                    Dust.NewDustPerfect(particles.Span[i].position + Main.rand.NextVector2Circular(5f, 5f), DustID.Smoke, Vector2.Zero, 150, multipliedColor, 1f);
                 }
 
-                metaballShader.Parameters.Particles[i] = new Vector4(ScreenNormalizePosition(particles.Span[i].position), particles.Span[i].size, particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive);
+                Lighting.AddLight(particles.Span[i].position, particles.Span[i].color * 0.5f);
+
+                if (particles.Span[i].timeAlive <= 0)
+                {
+                    particles.Span[i].timeAlive = 0;
+
+                }
+
+                var quotient = particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive;
+                metaballShader.Parameters.Particles[i] = new Vector4(ScreenNormalizePosition(particles.Span[i].position), MathHelper.SmoothStep(0, particles.Span[i].maxSize, quotient), particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive);
                 metaballShader.Parameters.ParticleColors[i] = particles.Span[i].color;
             }
         }

@@ -33,7 +33,9 @@ float4 main(float4 sampleColor : COLOR0, float2 coords : VPOS) : COLOR0
     float aspectRatio = uSource.x / uSource.y;
     uv.x *= aspectRatio;
     uv *= -1. + 2. ; // map to -1 to 1
+
     float4 cumulativeColor = float4(0,0,0,0);
+    float lifeTime = 0.0f;
     float totalDist = 1.0f;
     float aDist = sdCircle(uv - float2(0.2, 0.2), 0.3); 
     for (int i = 0; i < 100; i++)
@@ -50,10 +52,12 @@ float4 main(float4 sampleColor : COLOR0, float2 coords : VPOS) : COLOR0
     }
 
     float outline = 2 / uSource.y;
+    float colorBrightness = (cumulativeColor.r + cumulativeColor.g + cumulativeColor.b) / 3.0;
 
+    float4 outlineColor = lerp(float4(cumulativeColor.rgb, 1.0), float4(1.0, 1.0, 1.0, 1.0), colorBrightness * 1.5);
 
     float4 finalColor = totalDist < 0.0 ? float4(cumulativeColor.rgb, 1.0) : float4(0.0, 0.0, 0.0, 0.0);
-    finalColor = totalDist < outline && totalDist > 0.0 ? float4(1.0, 1.0, 1.0, 1.0) : finalColor;
+    finalColor = totalDist < outline && totalDist > 0.0 ? outlineColor : finalColor;
 
     // apply gamma correction
     float gamma = 2.2f;

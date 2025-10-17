@@ -7,12 +7,13 @@ float uPixel;
 float uColorResolution;
 float uGrayness;
 float uSpeed;
+float passes;
 float4 uSource;
 float3 uInColor;
 
 float4 main(float4 sampleColor : COLOR0, float2 coords : TEXCOORD0) : COLOR0
 {
-    return gauss_bloom(uImage0, coords, AspectCorrectedGBlurScale(uSource, 1.0f), 32, 1., 0.3f);
+    return gauss_bloom(uImage0, coords, AspectCorrectedGBlurScale(uSource, 1.0f), 8, 1., 0.3f);
 }
 
 #ifdef FX

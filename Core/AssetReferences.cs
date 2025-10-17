@@ -163,6 +163,8 @@ internal static class AssetReferences
 
                         public float uSpeed { get; set; }
 
+                        public float passes { get; set; }
+
                         public Microsoft.Xna.Framework.Vector4 uSource { get; set; }
 
                         public Microsoft.Xna.Framework.Vector3 uInColor { get; set; }
@@ -176,6 +178,7 @@ internal static class AssetReferences
                             parameters["uColorResolution"]?.SetValue(uColorResolution);
                             parameters["uGrayness"]?.SetValue(uGrayness);
                             parameters["uSpeed"]?.SetValue(uSpeed);
+                            parameters["passes"]?.SetValue(passes);
                             parameters["uSource"]?.SetValue(uSource);
                             parameters["uInColor"]?.SetValue(uInColor);
                         }

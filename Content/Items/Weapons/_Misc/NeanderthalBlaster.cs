@@ -79,7 +79,7 @@ public class NeanderthalBlaster : ModItem
             SoundEngine.PlaySound(Main.rand.NextFromList(Assets.Audio.Misc.StupidGun_RegularFire_Critter1.Asset, Assets.Audio.Misc.StupidGun_RegularFire_Critter2.Asset), player.Center);
         }
 
-        player.velocity -= Vector2.Normalize(velocity) * 0.1f;
+        player.velocity -= Vector2.Normalize(velocity) * 3f;
         return false;
     }
 
@@ -449,5 +449,49 @@ public class NeanderthalBlasterSDFParticles : ModSystem
         Main.spriteBatch.End();
 
         base.PostDrawTiles();
+    }
+}
+
+public class NeanderthalBlasterRelatedModSystem : ModSystem {
+    public override void PostWorldGen()
+    {
+        for (int i = 0; i < Main.chest.Length; i++)
+        {
+            Chest chest = Main.chest[i];
+            if (chest == null)
+            {
+                continue;
+            }
+            var potentialChest = Main.tile[chest.x, chest.y];
+            // what kind of chest is this?
+            var style = TileID.Sets.BasicChest[potentialChest.TileType] ? potentialChest.TileFrameX / 36 : -1;
+
+            if (style == 0) // this is a Wooden Chest
+            {
+                bool hasBlaster = false;
+                for (int j = 0; j < Chest.maxItems; j++)
+                {
+                    if (chest.item[j].type == ModContent.ItemType<NeanderthalBlaster>())
+                    {
+                        hasBlaster = true;
+                        break;
+                    }
+                }
+
+                if (!hasBlaster && Main.rand.NextBool(10))
+                {
+                    for (int j = 0; j < Chest.maxItems; j++)
+                    {
+                        if (chest.item[j].IsAir)
+                        {
+                            chest.item[j].SetDefaults(ModContent.ItemType<NeanderthalBlaster>());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        base.PostWorldGen();
     }
 }

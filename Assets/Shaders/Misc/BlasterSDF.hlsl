@@ -46,7 +46,7 @@ float4 main(float4 sampleColor : COLOR0, float2 coords : VPOS) : COLOR0
             pos.x *= aspectRatio;
             float dist = sdCircle(uv - pos, Particles[i].z / uSource.y);
             float alpha = smoothstep(0.03, 0.0, dist);
-            totalDist = smin(totalDist, dist, 0.01);
+            totalDist = smin(totalDist, dist, 0.006);
             cumulativeColor.rgb = lerp(cumulativeColor.rgb, ParticleColors[i], alpha);
         }
     }

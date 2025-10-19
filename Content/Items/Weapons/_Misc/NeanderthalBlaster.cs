@@ -1,9 +1,9 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Cataphract.Common.Easing;
 using Cataphract.Common.Rendering;
 using Cataphract.Core;
-using Microsoft.Build.Evaluation;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
@@ -86,40 +86,11 @@ public class NeanderthalBlaster : ModItem
     const int MaxFrames = 30;
     public override void UseStyle(Player player, Rectangle heldItemFrame)
     {
-        float PiecewiseLinearLerp(float value, params (float point, float time)[] segments)
-        {
-            if (segments.Length < 2)
-                return 0f;
-
-            float totalTime = 0f;
-            for (int i = 1; i < segments.Length; i++)
-            {
-                totalTime += segments[i].time;
-            }
-
-            float currentTime = value * totalTime;
-            float accumulatedTime = 0f;
-
-            for (int i = 0; i < segments.Length - 1; i++)
-            {
-                float segmentTime = segments[i + 1].time;
-
-                if (currentTime >= accumulatedTime && currentTime <= accumulatedTime + segmentTime)
-                {
-                    float localT = (currentTime - accumulatedTime) / segmentTime;
-                    return MathHelper.Lerp(segments[i].point, segments[i + 1].point, localT);
-                }
-
-                accumulatedTime += segmentTime;
-            }
-
-            return segments[^1].point;
-        }
 
         int framesFromStart = player.itemAnimationMax - player.itemAnimation;
         float percentDone = framesFromStart / (float)MaxFrames;
         float maxAngle = MathHelper.Pi / 1.5f;
-        float angle = MathHelper.SmoothStep(-maxAngle, 0, PiecewiseLinearLerp(MathHelper.Clamp(percentDone, 0, 1f), (1f, 0.15f), (0f, 0.04f), (1f, 0.5f)));
+        float angle = MathHelper.SmoothStep(-maxAngle, 0, Easing.PiecewiseLinearLerp(MathHelper.Clamp(percentDone, 0, 1f), (1f, 0.15f), (0f, 0.04f), (1f, 0.5f)));
         Vector2 targetAngle = player.Center.DirectionTo(Main.MouseWorld);
         player.direction = Utils.ToDirectionInt(targetAngle.ToRotation().ToRotationVector2().X > 0);
         targetAngle = targetAngle.RotatedBy(angle * player.direction);

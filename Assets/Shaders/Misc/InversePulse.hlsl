@@ -36,7 +36,7 @@ float4 main(float4 sampleColor : COLOR0, float2 coords : TEXCOORD0) : COLOR0
     float4 finalColor = col.xxxx;
 
     finalColor = 1.0 - saturate(finalColor);
-    float4 noise = tex2D(uImage0, uv.xy / sin(w + uTime) ) * 1.0;
+    float4 noise = tex2D(uImage0, uv.xy / sin(w + uTime));
     finalColor = smoothstep(finalColor.x, noise, d - w * 0.1);
     finalColor.rgb = RecolorGreyscale(finalColor.rgb) + d - w;
 

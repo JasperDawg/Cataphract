@@ -20,6 +20,14 @@ Items: {
 		DisplayName: Neanderthal Blaster
 		Tooltip: Caveman Technology
 	}
+
+	ShinyRockSceptor: {
+		DisplayName: Shiny Rock Sceptor
+		Tooltip: ""
+	}
 }
 
-Projectiles.NeanderthalBlasterProjectile.DisplayName: Neanderthal Blaster Projectile
+Projectiles: {
+	NeanderthalBlasterProjectile.DisplayName: Neanderthal Blaster Projectile
+	ShinyRockSceptor_Projectile.DisplayName: Shiny Rock Sceptor_ Projectile
+}

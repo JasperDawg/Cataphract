@@ -115,6 +115,24 @@ internal static class AssetReferences
 
                                 private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
                             }
+
+                            public static class GeodeWand
+                            {
+                                public const string KEY = "Cataphract/Assets/Images/Content/Items/Weapons/Misc/GeodeWand";
+
+                                public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                                private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                            }
+
+                            public static class GeodeWand_Stone
+                            {
+                                public const string KEY = "Cataphract/Assets/Images/Content/Items/Weapons/Misc/GeodeWand_Stone";
+
+                                public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                                private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                            }
                         }
                     }
                 }
@@ -172,6 +190,27 @@ internal static class AssetReferences
                     public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter2";
 
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter2");
+                }
+
+                public static class StoneWand_Shoot1
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot1";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StoneWand_Shoot1");
+                }
+
+                public static class StoneWand_Shoot2
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot2";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StoneWand_Shoot2");
+                }
+
+                public static class Stonewand_Shoot3
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/Stonewand_Shoot3";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/Stonewand_Shoot3");
                 }
             }
         }

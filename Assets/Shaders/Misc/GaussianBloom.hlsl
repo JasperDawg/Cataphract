@@ -11,6 +11,9 @@ float passes;
 float4 uSource;
 float3 uInColor;
 
+// variations of this need to be purpose built because of hlsl limitations
+// this one only does a basic gaussian bloom at fixed parameters
+
 float4 main(float4 sampleColor : COLOR0, float2 coords : TEXCOORD0) : COLOR0
 {
     return gauss_bloom(uImage0, coords, AspectCorrectedGBlurScale(uSource, 1.0f), 8, 1., 0.3f);

@@ -9,6 +9,8 @@ using Terraria.GameContent;
 using Terraria.ID;
 using Terraria.ModLoader;
 using Cataphract.Common.Rendering;
+using Terraria.Graphics;
+using Terraria.Graphics.Shaders;
 
 namespace Cataphract.Content.Items;
 
@@ -25,7 +27,10 @@ public class ShinyRockSceptor : ModItem
         Item.useStyle = -1;
         Item.useTime = 20;
         Item.useAnimation = 20;
-        Item.UseSound = Assets.Audio.Misc.StoneWand_Shoot1.Asset;
+        Item.UseSound = Assets.Audio.Misc.StoneWand_Shoot1.Asset with
+        {
+            pitchVariance = 0.4f
+        };
 
         Item.noUseGraphic = true;
         Item.noMelee = true;
@@ -42,6 +47,15 @@ public class ShinyRockSceptor : ModItem
         if (player.ownedProjectileCounts[Item.shoot] >= 1)
             return false;
         return base.CanUseItem(player);
+    }
+
+    const int rockXOffset = 11;
+    const int rockYOffset = -23;
+
+    public override void ModifyShootStats(Player player, ref Vector2 position, ref Vector2 velocity, ref int type, ref int damage, ref float knockback)
+    {
+        Projectile.NewProjectile(player.GetSource_ItemUse(Item), position, velocity, ModContent.ProjectileType<ShinyRockSceptor_Hitscan>(), damage, knockback, player.whoAmI);
+        base.ModifyShootStats(player, ref position, ref velocity, ref type, ref damage, ref knockback);
     }
 
     const int MaxFrames = 30;
@@ -188,6 +202,75 @@ public class ShinyRockSceptor_Projectile : ModProjectile
 
         Main.EntitySpriteDraw(rockTexture, Projectile.Center - Main.screenPosition + rockOffset, rockFrame, lightColor, newRot, rockFrame.Size() / 2f, 1f, effects, 0);
         Main.EntitySpriteDraw(rockTexture, Projectile.Center - Main.screenPosition + rockOffset, rockGlowFrame, glowColor, newRot, rockGlowFrame.Size() / 2f, 1f, effects, 0);
+
+        return false;
+    }
+}
+
+public class ShinyRockSceptor_Hitscan : ModProjectile
+{
+    public override string Texture => Assets.Images.Content.Items.Weapons.Misc.GeodeWand.KEY;
+    public override void SetStaticDefaults()
+    {
+        ProjectileID.Sets.TrailCacheLength[Projectile.type] = 1000;
+        ProjectileID.Sets.TrailingMode[Projectile.type] = 3;
+        base.SetStaticDefaults();
+    }
+    public override void SetDefaults()
+    {
+        Projectile.width = 1;
+        Projectile.height = 1;
+        Projectile.friendly = true;
+        Projectile.penetrate = -1;
+        Projectile.DamageType = DamageClass.Magic;
+        Projectile.timeLeft = 600;
+        Projectile.aiStyle = -1;
+        Projectile.extraUpdates = 6;
+        Projectile.tileCollide = true;
+    }
+
+    public override void AI()
+    {
+        Projectile.velocity.Y += 0.04f;
+    }
+
+    public override bool PreDraw(ref Color lightColor)
+    {
+        VertexStrip vertexStrip = new VertexStrip();
+
+        MiscShaderData miscShaderData = GameShaders.Misc["LightDisc"];
+        miscShaderData.UseSaturation(-2f);
+        miscShaderData.UseOpacity(MathHelper.Lerp(4f, 8f, 1f));
+        miscShaderData.Apply();
+        vertexStrip.PrepareStripWithProceduralPadding(
+            Projectile.oldPos,
+            Projectile.oldRot,
+            (i) => Color.Lerp(new Color(255, 0, 100, 0), Color.LightPink, 1 - Easing.InOutSine(i + 0.3f)),
+            (i) => 4f * (i * Easing.PiecewiseLinearLerp(i, (0.0f, 1f), (1.4f, 0.5f), (1f, 1f), (0f, 1f))),
+            -Main.screenPosition + Projectile.Size / 2f,
+            false,
+            default
+            );
+
+        vertexStrip.DrawTrail();
+        Main.pixelShader.CurrentTechnique.Passes[0].Apply();
+
+        Texture2D circleGlow = Assets.Images.Particles.Circular.Asset.Value;
+        Texture2D starGlow = Assets.Images.Particles.Star.Asset.Value;
+        Main.spriteBatch.End(out var ss);
+        Main.spriteBatch.Begin(
+            SpriteSortMode.Immediate,
+            BlendState.Additive,
+            SamplerState.LinearClamp,
+            DepthStencilState.None,
+            RasterizerState.CullNone,
+            null
+        );
+
+        Main.spriteBatch.Draw(circleGlow, Projectile.Center - Main.screenPosition, null, Color.Purple * 0.8f, MathF.PI, circleGlow.Size() / 2f, 0.2f, SpriteEffects.None, 0f);
+        Main.spriteBatch.Draw(starGlow, Projectile.Center - Main.screenPosition, null, Color.Pink * 0.5f, MathF.Sin(Main.GlobalTimeWrappedHourly * 6f) * 6f, starGlow.Size() / 2f, 0.15f, SpriteEffects.None, 0f);
+        Main.spriteBatch.Draw(starGlow, Projectile.Center - Main.screenPosition, null, Color.White, 0f, starGlow.Size() / 2f, 0.1f, SpriteEffects.None, 0f);
+        Main.spriteBatch.Restart(ss);
 
         return false;
     }

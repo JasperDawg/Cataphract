@@ -31,4 +31,5 @@ Projectiles: {
 	NeanderthalBlasterProjectile.DisplayName: Neanderthal Blaster Projectile
 	ShinyRockSceptor_Projectile.DisplayName: Shiny Rock Sceptor_ Projectile
 	ShinyRockSceptor_Hitscan.DisplayName: Shiny Rock Sceptor_ Hitscan
+	RockSceptor_Explosion.DisplayName: Rock Sceptor_ Explosion
 }

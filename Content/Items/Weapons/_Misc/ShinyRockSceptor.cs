@@ -11,6 +11,10 @@ using Terraria.ModLoader;
 using Cataphract.Common.Rendering;
 using Terraria.Graphics;
 using Terraria.Graphics.Shaders;
+using Cataphract.Core;
+using System.Diagnostics;
+using ReLogic.Content;
+using Terraria.Audio;
 
 namespace Cataphract.Content.Items;
 
@@ -23,13 +27,17 @@ public class ShinyRockSceptor : ModItem
     {
         Item.width = 40;
         Item.height = 40;
+        Item.damage = 12;
+        Item.DamageType = DamageClass.Magic;
+        Item.mana = 8;
 
         Item.useStyle = -1;
         Item.useTime = 20;
         Item.useAnimation = 20;
         Item.UseSound = Assets.Audio.Misc.StoneWand_Shoot1.Asset with
         {
-            pitchVariance = 0.4f
+            Volume = 3.5f,
+            PitchVariance = 0.4f
         };
 
         Item.noUseGraphic = true;
@@ -221,7 +229,7 @@ public class ShinyRockSceptor_Hitscan : ModProjectile
         Projectile.width = 1;
         Projectile.height = 1;
         Projectile.friendly = true;
-        Projectile.penetrate = -1;
+        Projectile.penetrate = 1;
         Projectile.DamageType = DamageClass.Magic;
         Projectile.timeLeft = 600;
         Projectile.aiStyle = -1;
@@ -232,6 +240,21 @@ public class ShinyRockSceptor_Hitscan : ModProjectile
     public override void AI()
     {
         Projectile.velocity.Y += 0.04f;
+    }
+
+    public override void OnKill(int timeLeft)
+    {
+        for (int i = 0; i < 20; i++)
+        {
+            Vector2 dustPosition = Projectile.Center + Vector2.UnitX.RotatedByRandom(MathHelper.TwoPi) * Main.rand.NextFloat(8f, 16f);
+            Vector2 dustVelocity = (dustPosition - Projectile.Center).SafeNormalize(Vector2.Zero) * 2;
+
+
+            var dust2 = Dust.NewDustPerfect(dustPosition, DustID.GemAmethyst, -Projectile.velocity * Main.rand.NextFloat(0.4f, 3f), Scale: Main.rand.NextFloat(1.2f, 1.5f));
+
+            dust2.noGravity = true;
+        }
+        base.OnKill(timeLeft);
     }
 
     public override bool PreDraw(ref Color lightColor)
@@ -273,5 +296,238 @@ public class ShinyRockSceptor_Hitscan : ModProjectile
         Main.spriteBatch.Restart(ss);
 
         return false;
+    }
+}
+
+public class ShinyRockSceptor_GlobalNPC : GlobalNPC {
+    int hitCount = 0;
+    const int maxHits = 5;
+    int timeSinceLastHit = 0;
+    const int maxTimeSinceLastHit = 300;
+    float hitCountQuotient => (float)hitCount / maxHits;
+
+    public override bool InstancePerEntity => true;
+
+    public override void OnHitByProjectile(NPC npc, Projectile projectile, NPC.HitInfo hit, int damageDone)
+    {
+        if (projectile.ModProjectile is ShinyRockSceptor_Hitscan)
+        {
+            timeSinceLastHit = maxTimeSinceLastHit;
+            hitCount++;
+            if (hitCount >= maxHits)
+            {
+                hitCount = 0;
+                Vector2 spawnPosition = npc.Center + new Vector2(Main.rand.NextFloat(-npc.width / 2f, npc.width / 2f), Main.rand.NextFloat(-npc.height / 2f, npc.height / 2f));
+                Projectile.NewProjectile(npc.GetSource_OnHit(npc), spawnPosition, Vector2.Zero, ModContent.ProjectileType<RockSceptor_Explosion>(), (int)(projectile.damage * 3f), 0f, projectile.owner);
+                
+                for (int i = 0; i < 20; i++) {
+                    ShinyRockSceptor_Particles.AddParticle(spawnPosition + Main.rand.NextVector2Circular(10f, 10f), Main.rand.Next(4, 16), (Vector2.One * 20f).RotatedByRandom(MathHelper.TwoPi));
+                }
+
+                SoundEngine.PlaySound(SoundID.Item14, spawnPosition);    
+            }
+        }
+
+        base.OnHitByProjectile(npc, projectile, hit, damageDone);
+    }
+
+    public override bool PreDraw(NPC npc, SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
+    {
+        Texture2D circleGlow = Assets.Images.Particles.Star.Asset.Value;
+        if (timeSinceLastHit <= 0)
+            return base.PreDraw(npc, spriteBatch, screenPos, drawColor);
+
+        float ease = Easing.InOutSine((timeSinceLastHit -= 4) / (float)maxTimeSinceLastHit);
+
+        Main.spriteBatch.End(out var ss);
+        Main.spriteBatch.Begin(
+            SpriteSortMode.Immediate,
+            BlendState.Additive,
+            SamplerState.LinearClamp,
+            DepthStencilState.None,
+            RasterizerState.CullNone,
+            null
+        );
+
+        Main.spriteBatch.Draw(circleGlow, npc.Center - Main.screenPosition, null, Color.HotPink * 0.8f * ease * (1.5f * hitCountQuotient), MathF.PI * hitCountQuotient, circleGlow.Size() / 2f, 0.4f * ease * (1.5f * hitCountQuotient), SpriteEffects.None, 0f);
+        Main.spriteBatch.Restart(ss);
+
+        return base.PreDraw(npc, spriteBatch, screenPos, drawColor);
+    }
+}
+
+public class RockSceptor_Explosion : ModProjectile
+{
+    public override string Texture => Assets.Images.Content.Items.Weapons.Misc.GeodeWand.KEY;
+
+    public override void SetDefaults()
+    {
+        Projectile.width = 100;
+        Projectile.height = 100;
+        Projectile.friendly = true;
+        Projectile.penetrate = -1;
+        Projectile.DamageType = DamageClass.Magic;
+        Projectile.timeLeft = 30;
+        Projectile.aiStyle = -1;
+        Projectile.alpha = 255;
+        Projectile.tileCollide = false;
+    }
+
+    public override bool PreDraw(ref Color lightColor)
+    {
+        
+        return base.PreDraw(ref lightColor);
+    }
+}
+
+public class ShinyRockSceptor_Particles : ModSystem
+{
+    private static Memory<Particle> particles = new Particle[100];
+    private struct Particle
+    {
+        public Vector2 position;
+        public Vector3 color;
+        public Vector2 velocity;
+        public float maxSize;
+        public int timeAlive;
+        public int maxTimeAlive;
+    }
+    private static WrapperShaderData<Assets.Shaders.Misc.RockSceptorSDF.Parameters>? metaballShader;
+    private static WrapperShaderData<Assets.Shaders.Misc.GaussianBloom.Parameters>? bloomShader;
+    private static RenderTarget2D? buffer;
+    public override void Load()
+    {
+        metaballShader = Assets.Shaders.Misc.RockSceptorSDF.CreateSDFShader();
+        bloomShader = Assets.Shaders.Misc.GaussianBloom.CreateBloomShader();
+
+        metaballShader.Parameters.Particles = new Vector4[100];
+        metaballShader.Parameters.ParticleColors = new Vector3[100];
+        
+        
+        Main.QueueMainThreadAction(() =>
+        {
+            buffer = new RenderTarget2D(Main.graphics.GraphicsDevice, Main.screenWidth / 2, Main.screenHeight / 2, false, SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
+        });
+
+        base.Load();
+    }
+    private static Asset<Texture2D> Noise => Assets.Images.Noise.Noise_DomainWarp_1.Asset;
+
+    public static void AddParticle(Vector2 position, int size, Vector2 velocity = default)
+    {
+        for (int i = 0; i < particles.Length; i++)
+        {
+            if (particles.Span[i].timeAlive <= 0)
+            {
+                int number = Main.rand.Next(20, 80);
+                particles.Span[i] = new Particle()
+                {
+                    position = position,
+                    maxSize = size,
+                    timeAlive = number,
+                    maxTimeAlive = number,
+                    color = new Vector3(0.3f, 0.3f, 0.4f),
+                    velocity = velocity == default ? Main.rand.NextVector2Circular(1f, 1f) * Main.rand.NextFloat(1.5f, 8f) : velocity
+                };
+                break;
+            }
+        }
+    }
+
+    private static Vector2 ScreenNormalizePosition(Vector2 position)
+    {
+        position.X = (position.X - Main.screenPosition.X) / Main.screenWidth;
+        position.Y = (position.Y - Main.screenPosition.Y) / Main.screenHeight;
+        return position;
+    }
+
+    static Vector3 startColor = new Vector3(1, 0.8f, 1f);
+    static Vector3 endColor = new Vector3((51 / 255f), -1f, 0.8f);
+    public override void PostUpdateDusts()
+    {
+        MakeShaderParticlesUpToDate();
+        base.PostUpdateDusts();
+    }
+    private static void MakeShaderParticlesUpToDate()
+    {
+        Debug.Assert(metaballShader is not null);
+        Debug.Assert(metaballShader.Parameters.Particles is not null);
+        Debug.Assert(metaballShader.Parameters.ParticleColors is not null);
+
+        for (int i = 0; i < particles.Length; i++)
+        {
+            if (particles.Span[i].timeAlive > 0)
+            {
+                particles.Span[i].timeAlive--;
+                particles.Span[i].position += particles.Span[i].velocity;
+                particles.Span[i].velocity.Y -= 0.05f;
+                particles.Span[i].velocity *= Main.rand.NextFloat(0.60f, 0.85f);
+                particles.Span[i].color = Vector3.Lerp(endColor, startColor, particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive);
+
+                if (particles.Span[i].timeAlive % 15 == 0 && Main.rand.NextBool(2))
+                {
+                    Color multipliedColor = new Color(particles.Span[i].color.X, particles.Span[i].color.Y, particles.Span[i].color.Z);
+                    Dust.NewDustPerfect(particles.Span[i].position + Main.rand.NextVector2Circular(5f, 5f), DustID.GemAmethyst, Vector2.One.RotatedByRandom(MathHelper.TwoPi), 150, multipliedColor, 1f);
+                }
+
+                Lighting.AddLight(particles.Span[i].position, particles.Span[i].color * 0.5f);
+
+                if (particles.Span[i].timeAlive <= 0)
+                {
+                    particles.Span[i].timeAlive = 0;
+
+                }
+
+                var quotient = particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive;
+                metaballShader.Parameters.Particles[i] = new Vector4(ScreenNormalizePosition(particles.Span[i].position), MathHelper.SmoothStep(0, particles.Span[i].maxSize, quotient), particles.Span[i].timeAlive / (float)particles.Span[i].maxTimeAlive);
+                metaballShader.Parameters.ParticleColors[i] = particles.Span[i].color;
+            }
+        }
+    }
+
+    public override void PostDrawTiles()
+    {
+
+
+        Debug.Assert(metaballShader is not null);
+        Debug.Assert(buffer is not null);
+
+        metaballShader.Parameters.uSource = new Vector4(buffer.Width, buffer.Height, Main.screenPosition.X, Main.screenPosition.Y);
+        metaballShader.Parameters.uPixel = 2f;
+        metaballShader.Parameters.uTexture1 = Noise.Value;
+
+        metaballShader.Apply();
+        var instance = Main.graphics;
+
+        RtContentPreserver.ApplyToBindings(instance.GraphicsDevice.GetRenderTargets());
+
+        var rts = instance.GraphicsDevice.GetRenderTargets();
+        RtContentPreserver.ApplyToBindings(rts);
+
+        instance.GraphicsDevice.SetRenderTarget(buffer);
+        instance.GraphicsDevice.Clear(Color.Transparent);
+        Main.spriteBatch.Begin(
+        SpriteSortMode.Immediate,
+        BlendState.AlphaBlend,
+        SamplerState.PointClamp,
+        DepthStencilState.Default,
+        RasterizerState.CullNone,
+        metaballShader.Shader);
+        Main.spriteBatch.Draw(TextureAssets.MagicPixel.Value, new Rectangle(0, 0, Main.screenWidth / 2, Main.screenHeight / 2), new Rectangle(0, 0, Main.screenWidth / 2, Main.screenHeight / 2), Color.White);
+        Main.spriteBatch.End();
+
+        instance.GraphicsDevice.SetRenderTargets(rts);
+
+        Main.spriteBatch.Begin(
+        SpriteSortMode.Immediate,
+        BlendState.AlphaBlend,
+        SamplerState.PointClamp,
+        DepthStencilState.Default,
+        RasterizerState.CullNone,
+        null);
+        Main.spriteBatch.Draw(buffer, new Rectangle(0, 0, Main.screenWidth, Main.screenHeight), new Rectangle(0, 0, buffer.Width, buffer.Height), Color.White);
+        Main.spriteBatch.End();
+
+        base.PostDrawTiles();
     }
 }

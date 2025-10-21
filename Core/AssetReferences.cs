@@ -46,6 +46,15 @@ internal static class AssetReferences
 
                     private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
                 }
+
+                public static class Noise_DomainWarp_1
+                {
+                    public const string KEY = "Cataphract/Assets/Images/Noise/Noise_DomainWarp_1";
+
+                    public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> Asset => lazy.Value;
+
+                    private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Texture2D>(KEY));
+                }
             }
 
             public static class Particles
@@ -210,13 +219,6 @@ internal static class AssetReferences
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter2");
                 }
 
-                public static class StoneWand_Shoot1
-                {
-                    public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot1";
-
-                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StoneWand_Shoot1");
-                }
-
                 public static class StoneWand_Shoot2
                 {
                     public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot2";
@@ -229,6 +231,13 @@ internal static class AssetReferences
                     public const string KEY = "Cataphract/Assets/Audio/Misc/Stonewand_Shoot3";
 
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/Stonewand_Shoot3");
+                }
+
+                public static class StoneWand_Shoot1
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot1";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StoneWand_Shoot1");
                 }
             }
         }
@@ -502,6 +511,57 @@ internal static class AssetReferences
                     }
 
                     public const string KEY = "Cataphract/Assets/Shaders/Misc/BlasterSDF";
+
+                    public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect> Asset => lazy.Value;
+
+                    private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Effect>(KEY, ReLogic.Content.AssetRequestMode.ImmediateLoad));
+
+                    public static WrapperShaderData<Parameters> CreateSDFShader()
+                    {
+                        return new WrapperShaderData<Parameters>(Asset, "SDFShader");
+                    }
+                }
+
+                public static class RockSceptorSDF
+                {
+                    public sealed class Parameters : IShaderParameters
+                    {
+                        public Microsoft.Xna.Framework.Graphics.Texture2D? uImage0 { get; set; }
+
+                        public Microsoft.Xna.Framework.Graphics.Texture2D? uTexture1 { get; set; }
+
+                        public Microsoft.Xna.Framework.Graphics.Texture2D? uImage1 { get; set; }
+
+                        public float uTime { get; set; }
+
+                        public float uHoverIntensity { get; set; }
+
+                        public float uPixel { get; set; }
+
+                        public float uSpeed { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector4 uSource { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector4[]? Particles { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector3[]? ParticleColors { get; set; }
+
+                        public void Apply(Microsoft.Xna.Framework.Graphics.EffectParameterCollection parameters)
+                        {
+                            parameters["uImage0"]?.SetValue(uImage0);
+                            parameters["uTexture1"]?.SetValue(uTexture1);
+                            parameters["uImage1"]?.SetValue(uImage1);
+                            parameters["uTime"]?.SetValue(Terraria.Main.GlobalTimeWrappedHourly);
+                            parameters["uHoverIntensity"]?.SetValue(uHoverIntensity);
+                            parameters["uPixel"]?.SetValue(uPixel);
+                            parameters["uSpeed"]?.SetValue(uSpeed);
+                            parameters["uSource"]?.SetValue(uSource);
+                            parameters["Particles"]?.SetValue(Particles);
+                            parameters["ParticleColors"]?.SetValue(ParticleColors);
+                        }
+                    }
+
+                    public const string KEY = "Cataphract/Assets/Shaders/Misc/RockSceptorSDF";
 
                     public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect> Asset => lazy.Value;
 

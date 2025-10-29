@@ -1,11 +1,14 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using Cataphract.Common.Utilities;
+using Cataphract.Core;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.GameContent;
 using Terraria.ModLoader;
+using Cataphract.Common.Rendering;
 
 namespace Cataphract.Content.NPCs;
 
@@ -49,6 +52,13 @@ public class MagicScientist : ModNPC
     public override void SetDefaults()
     {
         base.SetDefaults();
+        NPC.width = 40;
+        NPC.height = 40;
+        NPC.damage = 0;
+        NPC.defense = 10;
+        NPC.lifeMax = 5000;
+        NPC.knockBackResist = 0f;
+        NPC.aiStyle = -1;
     }
 
     public override void AI()
@@ -66,7 +76,18 @@ public class MagicScientist : ModNPC
 
         base.AI();
     }
-
+    static WrapperShaderData<Assets.Shaders.Misc.DistortionSphere.Parameters>? _distortionShader;
+    public override void Load()
+    {
+        _distortionShader = Assets.Shaders.Misc.DistortionSphere.CreateShieldShader();
+        base.Load();
+    }
+    private static Vector2 ScreenNormalizePosition(Vector2 position)
+    {
+        position.X = (position.X - Main.screenPosition.X) / Main.screenWidth;
+        position.Y = (position.Y - Main.screenPosition.Y) / Main.screenHeight;
+        return position;
+    }
     public override bool PreDraw(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor)
     {
         if (currentState is not null)
@@ -74,10 +95,34 @@ public class MagicScientist : ModNPC
             BossState.StatelessDrawActions?.Invoke(spriteBatch, this, NPC.position - screenPos);
         }
 
-        return base.PreDraw(spriteBatch, screenPos, drawColor);
+        Rectangle frame = new Rectangle(0, 0, 1000, 1000);
+        Main.EntitySpriteDraw(TextureAssets.MagicPixel.Value, NPC.Center - screenPos, frame, drawColor, NPC.rotation, frame.Size() / 2, NPC.scale, SpriteEffects.None, 0);
+        
+        Debug.Assert(_distortionShader is not null);
+
+        _distortionShader.Parameters.uTime = Main.GlobalTimeWrappedHourly;
+        Vector2 normalizedPos = ScreenNormalizePosition(NPC.Center);
+        _distortionShader.Parameters.uSource = new Vector4(frame.Width, frame.Height, normalizedPos.X, normalizedPos.Y);
+        _distortionShader.Apply();
+
+        spriteBatch.End(out var ss);
+        Main.spriteBatch.Begin(
+        SpriteSortMode.Immediate,
+        BlendState.AlphaBlend,
+        SamplerState.PointClamp,
+        DepthStencilState.Default,
+        RasterizerState.CullNone,
+        _distortionShader.Shader,
+        Main.GameViewMatrix.EffectMatrix
+        );
+
+        spriteBatch.Draw(TextureAssets.MagicPixel.Value, NPC.Center - screenPos, frame, drawColor, NPC.rotation, frame.Size() / 2, NPC.scale, SpriteEffects.None, 0);
+        spriteBatch.Restart(ss);
+
+        return false;
     }
 
-        internal void AddState(BossState state)
+    internal void AddState(BossState state)
     {
         if (state is not null)
         {

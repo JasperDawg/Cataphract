@@ -205,6 +205,13 @@ internal static class AssetReferences
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire");
                 }
 
+                public static class StupidGun_RegularFire_Critter
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter", 1, 2);
+                }
+
                 public static class StupidGun_RegularFire_Critter1
                 {
                     public const string KEY = "Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter1";
@@ -219,11 +226,25 @@ internal static class AssetReferences
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StupidGun_RegularFire_Critter2");
                 }
 
+                public static class StoneWand_Shoot
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StoneWand_Shoot", 1, 2);
+                }
+
                 public static class StoneWand_Shoot2
                 {
                     public const string KEY = "Cataphract/Assets/Audio/Misc/StoneWand_Shoot2";
 
                     public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/StoneWand_Shoot2");
+                }
+
+                public static class Stonewand_Shoot
+                {
+                    public const string KEY = "Cataphract/Assets/Audio/Misc/Stonewand_Shoot";
+
+                    public static Terraria.Audio.SoundStyle Asset => new Terraria.Audio.SoundStyle("Cataphract/Assets/Audio/Misc/Stonewand_Shoot", 3, 1);
                 }
 
                 public static class Stonewand_Shoot3
@@ -570,6 +591,57 @@ internal static class AssetReferences
                     public static WrapperShaderData<Parameters> CreateSDFShader()
                     {
                         return new WrapperShaderData<Parameters>(Asset, "SDFShader");
+                    }
+                }
+
+                public static class DistortionSphere
+                {
+                    public sealed class Parameters : IShaderParameters
+                    {
+                        public Microsoft.Xna.Framework.Graphics.Texture2D? uImage0 { get; set; }
+
+                        public float uTime { get; set; }
+
+                        public float uHoverIntensity { get; set; }
+
+                        public float uPixel { get; set; }
+
+                        public float uColorResolution { get; set; }
+
+                        public float uGrayness { get; set; }
+
+                        public float uSpeed { get; set; }
+
+                        public float passes { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector4 uSource { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector3 uInColor { get; set; }
+
+                        public void Apply(Microsoft.Xna.Framework.Graphics.EffectParameterCollection parameters)
+                        {
+                            parameters["uImage0"]?.SetValue(uImage0);
+                            parameters["uTime"]?.SetValue(Terraria.Main.GlobalTimeWrappedHourly);
+                            parameters["uHoverIntensity"]?.SetValue(uHoverIntensity);
+                            parameters["uPixel"]?.SetValue(uPixel);
+                            parameters["uColorResolution"]?.SetValue(uColorResolution);
+                            parameters["uGrayness"]?.SetValue(uGrayness);
+                            parameters["uSpeed"]?.SetValue(uSpeed);
+                            parameters["passes"]?.SetValue(passes);
+                            parameters["uSource"]?.SetValue(uSource);
+                            parameters["uInColor"]?.SetValue(uInColor);
+                        }
+                    }
+
+                    public const string KEY = "Cataphract/Assets/Shaders/Misc/DistortionSphere";
+
+                    public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect> Asset => lazy.Value;
+
+                    private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Effect>(KEY, ReLogic.Content.AssetRequestMode.ImmediateLoad));
+
+                    public static WrapperShaderData<Parameters> CreateShieldShader()
+                    {
+                        return new WrapperShaderData<Parameters>(Asset, "ShieldShader");
                     }
                 }
             }

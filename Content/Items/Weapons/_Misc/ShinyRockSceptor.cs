@@ -70,8 +70,6 @@ public class ShinyRockSceptor : ModItem
 
     public override void UseStyle(Player player, Rectangle heldItemFrame)
     {
-
-
         float percentDone = player.itemAnimation / (float)player.itemAnimationMax;
 
         float angle = Easing.PiecewiseLinearLerp(MathHelper.SmoothStep(0, 1, 1f - percentDone), (0f, 0.25f), (MathHelper.ToRadians(15f), 0.25f), (MathHelper.ToRadians(45f), 0.5f), (MathHelper.ToRadians(-25f), 0.5f), (0f, 2.75f));
@@ -147,7 +145,7 @@ public class ShinyRockSceptor_Projectile : ModProjectile
                 dust.noGravity = true;
             }
         }
-        return false; // Don't execute vanilla AI.
+        return false;
     }
     const int rockXOffset = 11;
     const int rockYOffset = -23;

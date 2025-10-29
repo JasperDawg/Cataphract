@@ -23,13 +23,15 @@ Items: {
 
 	ShinyRockSceptor: {
 		DisplayName: Shiny Rock Sceptor
-		Tooltip: ""
+		Tooltip: Messages from the stars!
 	}
 }
 
 Projectiles: {
-	NeanderthalBlasterProjectile.DisplayName: Neanderthal Blaster Projectile
+	NeanderthalBlasterProjectile.DisplayName: Sticks and Stones
 	ShinyRockSceptor_Projectile.DisplayName: Shiny Rock Sceptor_ Projectile
-	ShinyRockSceptor_Hitscan.DisplayName: Shiny Rock Sceptor_ Hitscan
-	RockSceptor_Explosion.DisplayName: Rock Sceptor_ Explosion
+	ShinyRockSceptor_Hitscan.DisplayName: Geode Beam
+	RockSceptor_Explosion.DisplayName: T-Tauri
 }
+
+NPCs.MagicScientist.DisplayName: Penitent Rector, Vermillion

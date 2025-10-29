@@ -312,7 +312,7 @@ namespace Cataphract.Content.Items
 
             pulse.Parameters.uTime = Main.GlobalTimeWrappedHourly;
             pulse.Parameters.uScale = 2f;
-            pulse.Parameters.uSource = new Vector4(frame.Width, frame.Height, 0, 0);
+            pulse.Parameters.uSource = new Vector4(frame.Width, frame.Height, Main.screenPosition.X, Main.screenPosition.Y);
             pulse.Apply();
 
             spriteBatch.End(out var ss);

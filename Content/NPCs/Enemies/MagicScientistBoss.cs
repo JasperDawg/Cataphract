@@ -77,9 +77,14 @@ public class MagicScientist : ModNPC
         base.AI();
     }
     static WrapperShaderData<Assets.Shaders.Misc.DistortionSphere.Parameters>? _distortionShader;
+    static RenderTarget2D? _distortionTarget;
     public override void Load()
     {
         _distortionShader = Assets.Shaders.Misc.DistortionSphere.CreateShieldShader();
+        Main.QueueMainThreadAction(() =>
+        {
+            _distortionTarget = new RenderTarget2D(Main.graphics.GraphicsDevice, 200, 200);
+        });
         base.Load();
     }
     private static Vector2 ScreenNormalizePosition(Vector2 position)
@@ -95,8 +100,8 @@ public class MagicScientist : ModNPC
             BossState.StatelessDrawActions?.Invoke(spriteBatch, this, NPC.position - screenPos);
         }
 
-        Rectangle frame = new Rectangle(0, 0, 1000, 1000);
-        Main.EntitySpriteDraw(TextureAssets.MagicPixel.Value, NPC.Center - screenPos, frame, drawColor, NPC.rotation, frame.Size() / 2, NPC.scale, SpriteEffects.None, 0);
+        Rectangle frame = new Rectangle(0, 0, 200, 200);
+
         
         Debug.Assert(_distortionShader is not null);
 
@@ -108,7 +113,7 @@ public class MagicScientist : ModNPC
         spriteBatch.End(out var ss);
         Main.spriteBatch.Begin(
         SpriteSortMode.Immediate,
-        BlendState.AlphaBlend,
+        BlendState.Additive,
         SamplerState.PointClamp,
         DepthStencilState.Default,
         RasterizerState.CullNone,
@@ -116,7 +121,7 @@ public class MagicScientist : ModNPC
         Main.GameViewMatrix.EffectMatrix
         );
 
-        spriteBatch.Draw(TextureAssets.MagicPixel.Value, NPC.Center - screenPos, frame, drawColor, NPC.rotation, frame.Size() / 2, NPC.scale, SpriteEffects.None, 0);
+        spriteBatch.Draw(_distortionTarget, NPC.Center - screenPos, frame, Color.White, NPC.rotation, frame.Size() / 2, NPC.scale, SpriteEffects.None, 0);
         spriteBatch.Restart(ss);
 
         return false;

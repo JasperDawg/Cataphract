@@ -12,7 +12,7 @@ float3 uInColor;
 #define PI 3.14159265359
 #define TAU 6.28318530718
 
-// make into separate header
+// todo: make into separate header
 float3x3 rotateX(float f)
 {
     return float3x3(
@@ -65,7 +65,7 @@ float2 hash2f(float2 p)
     return frac(cos(mul(p,float2x2(56.,37.,81.,-26.)))*28.9);   
 }
 
-// iq function, credit before pushing
+// https://iquilezles.org/articles/smoothvoronoi/
 float smoothVoronoi( in float2 x )
 {
     int2 p = floor( x );
@@ -102,23 +102,24 @@ float gFBM3(float3 p) { // adapted from nimitz's fast gyroid fBm
 
 float4 main(float4 sampleColor : COLOR0, float2 coords : TEXCOORD) : COLOR0
 {
-    float radius = 0.5;
+    float radius = 0.33;
 
     float3 forcefieldOpposite = float3(0, 10.0, 10.);
 
-    float2 uv = coords / uSource.xy;
+    float2 uv = coords;
     float aspectRatio = uSource.x / uSource.y;
+    uv -= float2(0.5, 0.5);
     uv.x *= aspectRatio;
-    uv *= -1. + 2.; 
+
 
     float l = length(uv);
-    float3 col = pow( float(max(1.0 -l + 0.5, 0.)), float4(18.6,7.3,3.3,1.));
+    float3 col = pow( float(max(1.0 -l + radius, 0.)), float4(18.6,7.3,3.3,1.));
 
     float3 otherCol = col;
 
     if (l > radius) 
     {
-         return float4(col + smoothVoronoi(sin(uv * uTime * uv)) * -l - 0.2, 1.0);
+         return float4(col + smoothVoronoi(sin(uv * uTime * uv)) * -l - radius, 1.0);
     }
     
     float z = radius*sin(acos(l/radius));

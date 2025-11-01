@@ -91,9 +91,9 @@ public static class PrimitiveRenderer
         bool textured = mesh.UsesTexture;
 
         _effect.TextureEnabled = textured;
-        _effect.Texture = textured ? TextureAssets.Logo.Value : null;
+        _effect.Texture = textured ? Assets.Images.Noise.Noise1.Asset.Value : null;
         _graphicsDevice.SamplerStates[0] = SamplerState.PointWrap;
-        
+
         _effect.World = world;
         _effect.View = view;
         _effect.Projection = projection;
@@ -909,22 +909,22 @@ public static class TriangleStripBuilder
                 return Vector3.CatmullRom(p0, p1, p2, p3, t);
 
             case StripCurveType.CubicBezier when count >= 4:
-            {
-                Vector3 c1 = p1 + (p2 - p0) / 6f;
-                Vector3 c2 = p2 - (p3 - p1) / 6f;
-                float inv = 1f - t;
-                return inv * inv * inv * p1
-                     + 3f * inv * inv * t * c1
-                     + 3f * inv * t * t * c2
-                     + t * t * t * p2;
-            }
+                {
+                    Vector3 c1 = p1 + (p2 - p0) / 6f;
+                    Vector3 c2 = p2 - (p3 - p1) / 6f;
+                    float inv = 1f - t;
+                    return inv * inv * inv * p1
+                         + 3f * inv * inv * t * c1
+                         + 3f * inv * t * t * c2
+                         + t * t * t * p2;
+                }
 
             case StripCurveType.Hermite when count >= 4:
-            {
-                Vector3 tan1 = (p2 - p0) * 0.5f;
-                Vector3 tan2 = (p3 - p1) * 0.5f;
-                return Vector3.Hermite(p1, tan1, p2, tan2, t);
-            }
+                {
+                    Vector3 tan1 = (p2 - p0) * 0.5f;
+                    Vector3 tan2 = (p3 - p1) * 0.5f;
+                    return Vector3.Hermite(p1, tan1, p2, tan2, t);
+                }
 
             default:
                 return Vector3.Lerp(p1, p2, t);
@@ -1379,6 +1379,52 @@ public static class PrimitiveShapeBuilder
         return new PrimitiveMesh(colorVertices, colorIndices, PrimitiveType.TriangleList);
     }
 
+    // TODO: Fix UVs
+    public static PrimitiveMesh BuildPolygon(IReadOnlyList<Vector3> points, Color color, bool textured = false)
+    {
+        if (points == null)
+            throw new ArgumentNullException(nameof(points));
+        if (points.Count < 3)
+            throw new ArgumentOutOfRangeException(nameof(points), "Polygon requires at least three points.");
+
+        if (textured)
+        {
+            var texturedVertices = new VertexPositionColorTexture[points.Count];
+            for (int i = 0; i < points.Count; i++)
+            {
+                var point = points[i];
+                texturedVertices[i] = new VertexPositionColorTexture(point, color, new Vector2(0f, 0f));
+            }
+
+            var indices = new short[(points.Count - 2) * 3];
+            for (int i = 0; i < points.Count - 2; i++)
+            {
+                indices[i * 3] = 0;
+                indices[i * 3 + 1] = (short)(i + 1);
+                indices[i * 3 + 2] = (short)(i + 2);
+            }
+
+            return new PrimitiveMesh(texturedVertices, indices, PrimitiveType.TriangleList);
+        }
+
+        var colorVertices = new VertexPositionColor[points.Count];
+        for (int i = 0; i < points.Count; i++)
+        {
+            var point = points[i];
+            colorVertices[i] = new VertexPositionColor(point, color);
+        }
+
+        var colorIndices = new short[(points.Count - 2) * 3];
+        for (int i = 0; i < points.Count - 2; i++)
+        {
+            colorIndices[i * 3] = 0;
+            colorIndices[i * 3 + 1] = (short)(i + 1);
+            colorIndices[i * 3 + 2] = (short)(i + 2);
+        }
+
+        return new PrimitiveMesh(colorVertices, colorIndices, PrimitiveType.TriangleList);
+    }
+
     public static PrimitiveMesh BuildEllipse(
         Vector3 center,
         Vector2 radii,
@@ -1706,11 +1752,11 @@ public class TestPrimitiveRenderSystem : ModSystem
             };
         var gradientColors = new Color[]
         {
+            Color.Orange,
             Color.White,
+            Color.Red,
             Color.White,
-            Color.White,
-            Color.White,
-            Color.White
+            Color.Violet
         };
 
         var strip = TriangleStripBuilder.BuildStrip(path, width: 20f, gradientColors, smoothingSegments: 0, joinStyle: StripJoinStyle.Miter, textured: false);
@@ -1734,10 +1780,10 @@ public class TestPrimitiveRenderSystem : ModSystem
             t => MathHelper.Lerp(40f, 40f, t),
             gradientColors,
             easing: Easing.Easing.InOutSine,
-            smoothingSegments: 128,
+            smoothingSegments: 16,
             startCap: StripCapStyle.HalfCircle,
             endCap: StripCapStyle.Triangle,
-            capSegments: 16, textured: true, widthAttenuation: StripWidthAttenuation.ContinuitySquared, smoothingCurve: StripCurveType.CubicBezier);
+            capSegments: 16, textured: false, widthAttenuation: StripWidthAttenuation.ContinuitySquared, smoothingCurve: StripCurveType.CubicBezier);
 
         world = Matrix.CreateTranslation(0, 300, 0);
 
@@ -1789,6 +1835,23 @@ public class TestPrimitiveRenderSystem : ModSystem
             hexagon,
             blendState: BlendState.AlphaBlend);
 
+        var polygon = PrimitiveShapeBuilder.BuildPolygon(
+            new[]
+            {
+                new Vector3(520f, 260f, 0f),
+                new Vector3(620f, 220f, 0f),
+                new Vector3(700f, 260f, 0f),
+                new Vector3(660f, 320f, 0f),
+                new Vector3(560f, 340f, 0f)
+            },
+            Color.Goldenrod,
+            textured: true);
+
+        PrimitiveRenderer.DrawMesh(
+            Matrix.Identity, view, projection,
+            polygon,
+            blendState: BlendState.AlphaBlend);
+
         var ellipse = PrimitiveShapeBuilder.BuildEllipse(
             new Vector3(600f, 420f, 0f),
             new Vector2(90f, 45f),
@@ -1827,7 +1890,7 @@ public class TestPrimitiveRenderSystem : ModSystem
             blendState: BlendState.AlphaBlend);
 
         var sphere = PrimitiveShapeBuilder.BuildSphere(
-            new Vector3(100f, 420f, 0f),
+            new Vector3(100f, 820f, 0f),
             radius: 80f,
             latitudeSegments: 8,
             longitudeSegments: 8,
@@ -1838,6 +1901,143 @@ public class TestPrimitiveRenderSystem : ModSystem
             sphere,
             blendState: BlendState.AlphaBlend);
 
+        var fabrikStrip = ConstraintExamples.BuildFabrikStripExample(
+            root: new Vector3(1000f, 400f, 0f),
+            target: new Vector3(Main.MouseScreen, 0f),
+            segmentLength: 128f,
+            joints: 3,
+            width: 32f,
+            startColor: Color.DeepSkyBlue,
+            endColor: Color.OrangeRed);
+
+        PrimitiveRenderer.DrawMesh(
+            Matrix.Identity, view, projection,
+            fabrikStrip,
+            blendState: BlendState.AlphaBlend);
+
+        var cloth = ConstraintExamples.BuildVerletClothExample(
+            origin: new Vector3(440f, 400f, 0f),
+            rightExtent: new Vector3(260f, 0f, 0f),
+            downExtent: new Vector3(0f, 180f, 0f),
+            color: Color.LightSkyBlue * 0.85f,
+            deltaTime: 1f / 60f);
+
+        PrimitiveRenderer.DrawMesh(
+            Matrix.Identity, view, projection,
+            cloth,
+            blendState: BlendState.AlphaBlend);
+
+        var rope = ConstraintExamples.BuildVerletRopeExample(
+            start: new Vector3(400f, 300f, 0f),
+            end: new Vector3(700f, 500f, 0f),
+            color: Color.SandyBrown,
+            width: 8f,
+            deltaTime: 1f / 60f);
+
+        PrimitiveRenderer.DrawMesh(
+            Matrix.Identity, view, projection,
+            rope,
+            blendState: BlendState.AlphaBlend);
         Main.spriteBatch.Begin(ss);
     }
+
+    public static class ConstraintExamples
+    {
+        private static VerletRope? verletRope = new VerletRope(
+                start: Vector3.Zero,
+                end: Vector3.UnitX * 300f,
+                segments: 20);
+
+        private static FabrikChain? fabrikChain;
+        private static VerletCloth? verletCloth;
+
+        public static PrimitiveMesh BuildVerletRopeExample(Vector3 start, Vector3 end, float width, Color color, float deltaTime)
+        {
+            var rope = verletRope;
+            Debug.Assert(rope != null, "Rope not initialized.");
+
+            rope.Simulate(deltaTime, acceleration: new Vector3(0f, 800.0f, 0f), constraintIterations: 36, pinnedStart: new Vector3(Main.MouseScreen, 0f), pinnedEnd: null, damping: 1f, stiffness: 1f);
+            return rope.BuildTriangleStrip(width, color, textured: false, joinStyle: StripJoinStyle.Perpendicular, startCap: StripCapStyle.HalfCircle, endCap: StripCapStyle.HalfCircle);
+        }
+
+        public static PrimitiveMesh BuildFabrikStripExample(Vector3 root, Vector3 target, float segmentLength, int joints, float width, Color startColor, Color endColor)
+        {
+            var chain = fabrikChain;
+            if (chain == null || chain.JointCount != joints)
+            {
+                var initial = new Vector3[joints];
+                for (int i = 0; i < joints; i++)
+                    initial[i] = root + new Vector3(segmentLength * i, 0f, 0f);
+                fabrikChain = chain = new FabrikChain(initial);
+            }
+
+            ConfigureFabrikConstraints(chain, root, segmentLength);
+
+            float logicFps = Main.frameRate <= 0 ? 60f : Main.frameRate;
+            float deltaTime = 1f / logicFps;
+
+            chain.Responsiveness = 12f;
+            chain.ResetJoint(0, root, resetHistory: true);
+            chain.Solve(target, rootOverride: root, tolerance: 0f, maxIterations: 128, deltaTime: deltaTime);
+
+            var path = new List<Vector3>(chain.JointCount);
+            var colors = new Color[chain.JointCount];
+
+            for (int i = 0; i < chain.JointCount; i++)
+            {
+                path.Add(chain.Joints[i]);
+                float t = chain.JointCount == 1 ? 0f : i / (float)(chain.JointCount - 1);
+                colors[i] = Color.Lerp(startColor, endColor, t);
+            }
+
+            return TriangleStripBuilder.BuildStrip(
+                path,
+                width,
+                colors,
+                smoothingSegments: 0,
+                joinStyle: StripJoinStyle.Perpendicular,
+                textured: false,
+                startCap: StripCapStyle.HalfCircle,
+                endCap: StripCapStyle.HalfCircle);
+        }
+
+        public static PrimitiveMesh BuildVerletClothExample(Vector3 origin, Vector3 rightExtent, Vector3 downExtent, Color color, float deltaTime)
+        {
+            var cloth = verletCloth;
+            if (cloth == null)
+            {
+                cloth = new VerletCloth(origin, rightExtent, downExtent, widthSegments: 20, heightSegments: 20);
+                verletCloth = cloth;
+            }
+
+            int maxX = 18;
+            cloth.PinNode(0, 0, origin);
+            cloth.PinNode(maxX / 2, 0, origin + rightExtent * 0.5f);
+            cloth.PinNode(maxX, 0, origin + rightExtent);
+
+            cloth.Simulate(deltaTime, acceleration: new Vector3(5000f * MathF.Sin(Main.GlobalTimeWrappedHourly), 950f, 0f), constraintIterations: 10, substeps: 2, damping: 0.995f, stiffness: 0.92f, maxVelocity: 35f);
+            return cloth.BuildMesh(color, textured: true);
+        }
+
+        private static void ConfigureFabrikConstraints(FabrikChain chain, Vector3 root, float segmentLength)
+        {
+            float maxRadius = segmentLength * (chain.JointCount - 1) * 1.05f;
+            chain.Responsiveness = 9f;
+
+            for (int i = 0; i < chain.JointCount; i++)
+            {
+                if (i == 0)
+                {
+                    chain.SetConstraint(i, new FabrikPlaneConstraint(root, Vector3.UnitZ, followRoot: true));
+                }
+                else
+                {
+                    chain.SetConstraint(i, new FabrikCompositeConstraint(
+                        new FabrikSphereConstraint(0f, maxRadius, followRoot: true),
+                        new FabrikConeConstraint(70f, Vector3.UnitX)));
+                }
+            }
+        }
+    }
+
 }

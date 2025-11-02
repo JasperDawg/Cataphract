@@ -7,6 +7,7 @@ using Terraria.ModLoader;
 using Cataphract.Common.Rendering;
 using System.Diagnostics;
 using Terraria.GameContent;
+using static Cataphractal.Common.Mathematical;
 
 namespace Cataphract.Common;
 // TODO: Document public shtuff, fix some bugs, support an arbitrary shader, maybe stop supporting VertexPositionColor?
@@ -91,7 +92,7 @@ public static class PrimitiveRenderer
         bool textured = mesh.UsesTexture;
 
         _effect.TextureEnabled = textured;
-        _effect.Texture = textured ? Assets.Images.Noise.Noise1.Asset.Value : null;
+        _effect.Texture = textured ? Assets.Images.Particles.Star2.Asset.Value : null;
         _graphicsDevice.SamplerStates[0] = SamplerState.PointWrap;
 
         _effect.World = world;
@@ -367,6 +368,467 @@ public readonly struct PrimitiveMesh
     }
 }
 
+public static class PrimitiveMeshExtensions
+{
+    public static PrimitiveMesh Transform(this in PrimitiveMesh mesh, in Matrix transform)
+    {
+        if (!mesh.IsValid)
+            return mesh;
+
+        var indices = (short[])mesh.Indices.Clone();
+
+        if (mesh.UsesTexture)
+        {
+            var source = mesh.TexturedVertices;
+            var transformed = new VertexPositionColorTexture[source.Length];
+            for (int i = 0; i < source.Length; i++)
+            {
+                var v = source[i];
+                transformed[i] = new VertexPositionColorTexture(
+                    Vector3.Transform(v.Position, transform),
+                    v.Color,
+                    v.TextureCoordinate);
+            }
+
+            return new PrimitiveMesh(transformed, indices, mesh.PrimitiveType);
+        }
+
+        {
+            var source = mesh.ColorVertices;
+            var transformed = new VertexPositionColor[source.Length];
+            for (int i = 0; i < source.Length; i++)
+            {
+                var v = source[i];
+                transformed[i] = new VertexPositionColor(
+                    Vector3.Transform(v.Position, transform),
+                    v.Color);
+            }
+
+            return new PrimitiveMesh(transformed, indices, mesh.PrimitiveType);
+        }
+    }
+
+    public static PrimitiveMesh Translate(this in PrimitiveMesh mesh, in Vector3 offset) =>
+        mesh.Transform(Matrix.CreateTranslation(offset));
+
+    public static PrimitiveMesh Scale(this in PrimitiveMesh mesh, in Vector3 scale) =>
+        mesh.Transform(Matrix.CreateScale(scale));
+
+    public static PrimitiveMesh Rotate(this in PrimitiveMesh mesh, in Quaternion rotation) =>
+        mesh.Transform(Matrix.CreateFromQuaternion(rotation));
+
+    public static PrimitiveMesh Extrude(this in PrimitiveMesh mesh, in Vector3 direction, bool closeCaps = true)
+    {
+        if (!mesh.IsValid)
+            throw new InvalidOperationException("Cannot extrude an invalid mesh.");
+        if (mesh.PrimitiveType != PrimitiveType.TriangleList)
+            throw new NotSupportedException("Extrusion currently supports triangle list meshes only.");
+        if (direction.LengthSquared() <= Epsilon)
+            return mesh;
+
+        return mesh.UsesTexture
+            ? ExtrudeTextured(mesh, direction, closeCaps)
+            : ExtrudeColored(mesh, direction, closeCaps);
+    }
+
+    private static PrimitiveMesh ExtrudeTextured(in PrimitiveMesh mesh, Vector3 direction, bool closeCaps)
+    {
+        var top = mesh.TexturedVertices;
+        var baseIndices = mesh.Indices;
+        int originalVertexCount = top.Length;
+
+        var vertices = new List<VertexPositionColorTexture>(originalVertexCount * 2);
+        vertices.AddRange(top);
+
+        for (int i = 0; i < originalVertexCount; i++)
+        {
+            var v = top[i];
+            vertices.Add(new VertexPositionColorTexture(
+                v.Position + direction,
+                v.Color,
+                v.TextureCoordinate));
+        }
+
+        var indices = new List<short>(closeCaps ? baseIndices.Length * 2 : baseIndices.Length + originalVertexCount * 6);
+        indices.AddRange(baseIndices);
+
+        if (closeCaps)
+        {
+            for (int i = 0; i < baseIndices.Length; i += 3)
+            {
+                short a = (short)(baseIndices[i] + originalVertexCount);
+                short b = (short)(baseIndices[i + 1] + originalVertexCount);
+                short c = (short)(baseIndices[i + 2] + originalVertexCount);
+                indices.Add(c);
+                indices.Add(b);
+                indices.Add(a);
+            }
+        }
+
+        var positions = new Vector3[originalVertexCount];
+        for (int i = 0; i < originalVertexCount; i++)
+            positions[i] = top[i].Position;
+
+        var loops = BuildBoundaryLoops(positions, baseIndices);
+        foreach (var loop in loops)
+        {
+            float perimeter = 0f;
+            for (int i = 0; i < loop.Count; i++)
+                perimeter += loop[i].Length;
+            if (perimeter <= Epsilon)
+                continue;
+
+            float accumulated = 0f;
+            foreach (var edge in loop)
+            {
+                float u0 = accumulated / perimeter;
+                accumulated += edge.Length;
+                float u1 = accumulated / perimeter;
+
+                var startTop = top[edge.Start];
+                var endTop = top[edge.End];
+                var startBottomPos = startTop.Position + direction;
+                var endBottomPos = endTop.Position + direction;
+
+                short topStartIndex = AddVertex(vertices, new VertexPositionColorTexture(startTop.Position, startTop.Color, new Vector2(u0, 0f)));
+                short bottomStartIndex = AddVertex(vertices, new VertexPositionColorTexture(startBottomPos, startTop.Color, new Vector2(u0, 1f)));
+                short topEndIndex = AddVertex(vertices, new VertexPositionColorTexture(endTop.Position, endTop.Color, new Vector2(u1, 0f)));
+                short bottomEndIndex = AddVertex(vertices, new VertexPositionColorTexture(endBottomPos, endTop.Color, new Vector2(u1, 1f)));
+
+                indices.Add(topStartIndex);
+                indices.Add(topEndIndex);
+                indices.Add(bottomEndIndex);
+
+                indices.Add(topStartIndex);
+                indices.Add(bottomEndIndex);
+                indices.Add(bottomStartIndex);
+            }
+        }
+
+        return new PrimitiveMesh(vertices.ToArray(), indices.ToArray(), PrimitiveType.TriangleList);
+    }
+
+    private static PrimitiveMesh ExtrudeColored(in PrimitiveMesh mesh, Vector3 direction, bool closeCaps)
+    {
+        var top = mesh.ColorVertices;
+        var baseIndices = mesh.Indices;
+        int originalVertexCount = top.Length;
+
+        var vertices = new List<VertexPositionColor>(originalVertexCount * 2);
+        vertices.AddRange(top);
+
+        for (int i = 0; i < originalVertexCount; i++)
+        {
+            var v = top[i];
+            vertices.Add(new VertexPositionColor(v.Position + direction, v.Color));
+        }
+
+        var indices = new List<short>(closeCaps ? baseIndices.Length * 2 : baseIndices.Length + originalVertexCount * 6);
+        indices.AddRange(baseIndices);
+
+        if (closeCaps)
+        {
+            for (int i = 0; i < baseIndices.Length; i += 3)
+            {
+                short a = (short)(baseIndices[i] + originalVertexCount);
+                short b = (short)(baseIndices[i + 1] + originalVertexCount);
+                short c = (short)(baseIndices[i + 2] + originalVertexCount);
+                indices.Add(c);
+                indices.Add(b);
+                indices.Add(a);
+            }
+        }
+
+        var positions = new Vector3[originalVertexCount];
+        for (int i = 0; i < originalVertexCount; i++)
+            positions[i] = top[i].Position;
+
+        var loops = BuildBoundaryLoops(positions, baseIndices);
+        foreach (var loop in loops)
+        {
+            float perimeter = 0f;
+            for (int i = 0; i < loop.Count; i++)
+                perimeter += loop[i].Length;
+            if (perimeter <= Epsilon)
+                continue;
+
+            float accumulated = 0f;
+            foreach (var edge in loop)
+            {
+                float u0 = accumulated / perimeter;
+                accumulated += edge.Length;
+                float u1 = accumulated / perimeter;
+
+                var startTop = top[edge.Start];
+                var endTop = top[edge.End];
+                var startBottomPos = startTop.Position + direction;
+                var endBottomPos = endTop.Position + direction;
+
+                short topStartIndex = AddVertex(vertices, new VertexPositionColor(startTop.Position, startTop.Color));
+                short bottomStartIndex = AddVertex(vertices, new VertexPositionColor(startBottomPos, startTop.Color));
+                short topEndIndex = AddVertex(vertices, new VertexPositionColor(endTop.Position, endTop.Color));
+                short bottomEndIndex = AddVertex(vertices, new VertexPositionColor(endBottomPos, endTop.Color));
+
+                indices.Add(topStartIndex);
+                indices.Add(topEndIndex);
+                indices.Add(bottomEndIndex);
+
+                indices.Add(topStartIndex);
+                indices.Add(bottomEndIndex);
+                indices.Add(bottomStartIndex);
+            }
+        }
+
+        return new PrimitiveMesh(vertices.ToArray(), indices.ToArray(), PrimitiveType.TriangleList);
+    }
+
+    public static PrimitiveMesh CurveEdges(this in PrimitiveMesh mesh, in Vector3 axis, float magnitude, float exponent = 2f)
+    {
+        if (!mesh.IsValid)
+            return mesh;
+        if (axis.LengthSquared() <= Epsilon)
+            throw new ArgumentException("Axis must be non-zero.", nameof(axis));
+        if (mesh.PrimitiveType != PrimitiveType.TriangleList && mesh.PrimitiveType != PrimitiveType.TriangleStrip)
+            throw new NotSupportedException("CurveEdges supports triangle-based meshes.");
+
+        float clampedExponent = Math.Max(exponent, 1e-3f);
+        Vector3 axisDir = Vector3.Normalize(axis);
+        var indices = (short[])mesh.Indices.Clone();
+
+        if (mesh.UsesTexture)
+        {
+            var source = mesh.TexturedVertices;
+            var vertices = new VertexPositionColorTexture[source.Length];
+            ComputeCentroidAndRadius(source, out var centroid, out float radius);
+
+            for (int i = 0; i < source.Length; i++)
+            {
+                var v = source[i];
+                Vector3 diff = v.Position - centroid;
+                float radial = radius <= Epsilon ? 0f : diff.Length() / radius;
+                float factor = MathF.Pow(MathHelper.Clamp(radial, 0f, 1f), clampedExponent);
+                Vector3 offset = axisDir * magnitude * factor;
+
+                vertices[i] = new VertexPositionColorTexture(v.Position + offset, v.Color, v.TextureCoordinate);
+            }
+
+            return new PrimitiveMesh(vertices, indices, mesh.PrimitiveType);
+        }
+        else
+        {
+            var source = mesh.ColorVertices;
+            var vertices = new VertexPositionColor[source.Length];
+            ComputeCentroidAndRadius(source, out var centroid, out float radius);
+
+            for (int i = 0; i < source.Length; i++)
+            {
+                var v = source[i];
+                Vector3 diff = v.Position - centroid;
+                float radial = radius <= Epsilon ? 0f : diff.Length() / radius;
+                float factor = MathF.Pow(MathHelper.Clamp(radial, 0f, 1f), clampedExponent);
+                Vector3 offset = axisDir * magnitude * factor;
+
+                vertices[i] = new VertexPositionColor(v.Position + offset, v.Color);
+            }
+
+            return new PrimitiveMesh(vertices, indices, mesh.PrimitiveType);
+        }
+    }
+
+    private static void ComputeCentroidAndRadius(VertexPositionColorTexture[] vertices, out Vector3 centroid, out float radius)
+    {
+        centroid = Vector3.Zero;
+        for (int i = 0; i < vertices.Length; i++)
+            centroid += vertices[i].Position;
+        centroid /= vertices.Length;
+
+        radius = Epsilon;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float length = Vector3.Distance(centroid, vertices[i].Position);
+            if (length > radius)
+                radius = length;
+        }
+    }
+
+    private static void ComputeCentroidAndRadius(VertexPositionColor[] vertices, out Vector3 centroid, out float radius)
+    {
+        centroid = Vector3.Zero;
+        for (int i = 0; i < vertices.Length; i++)
+            centroid += vertices[i].Position;
+        centroid /= vertices.Length;
+
+        radius = Epsilon;
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            float length = Vector3.Distance(centroid, vertices[i].Position);
+            if (length > radius)
+                radius = length;
+        }
+    }
+
+    private static List<List<OrientedEdge>> BuildBoundaryLoops(IReadOnlyList<Vector3> positions, short[] indices)
+    {
+        var edgeMap = new Dictionary<EdgeKey, EdgeAccumulator>();
+        for (int i = 0; i < indices.Length; i += 3)
+        {
+            RegisterEdge(edgeMap, indices[i], indices[i + 1]);
+            RegisterEdge(edgeMap, indices[i + 1], indices[i + 2]);
+            RegisterEdge(edgeMap, indices[i + 2], indices[i]);
+        }
+
+        var edges = new List<OrientedEdge>();
+        foreach (var pair in edgeMap)
+        {
+            if (pair.Value.Count == 1)
+            {
+                var oriented = pair.Value.Orientation;
+                float length = Vector3.Distance(positions[oriented.Start], positions[oriented.End]);
+                if (length > Epsilon)
+                    edges.Add(new OrientedEdge(oriented.Start, oriented.End, length));
+            }
+        }
+
+        var loops = new List<List<OrientedEdge>>();
+        var used = new bool[edges.Count];
+
+        for (int i = 0; i < edges.Count; i++)
+        {
+            if (used[i])
+                continue;
+
+            var loop = new List<OrientedEdge>();
+            used[i] = true;
+            loop.Add(edges[i]);
+
+            short head = edges[i].End;
+            bool closed = head == loop[0].Start;
+
+            while (!closed)
+            {
+                bool found = false;
+                for (int j = 0; j < edges.Count; j++)
+                {
+                    if (used[j])
+                        continue;
+
+                    var candidate = edges[j];
+                    if (candidate.Start == head)
+                    {
+                        used[j] = true;
+                        loop.Add(candidate);
+                        head = candidate.End;
+                        found = true;
+                    }
+                    else if (candidate.End == head)
+                    {
+                        candidate = candidate.Reversed();
+                        edges[j] = candidate;
+                        used[j] = true;
+                        loop.Add(candidate);
+                        head = candidate.End;
+                        found = true;
+                    }
+
+                    if (found)
+                    {
+                        closed = head == loop[0].Start;
+                        break;
+                    }
+                }
+
+                if (!found)
+                    break;
+            }
+
+            if (loop.Count > 1 && closed)
+                loops.Add(loop);
+        }
+
+        return loops;
+    }
+
+    private static void RegisterEdge(Dictionary<EdgeKey, EdgeAccumulator> edgeMap, short start, short end)
+    {
+        var key = new EdgeKey(Math.Min(start, end), Math.Max(start, end));
+        if (edgeMap.TryGetValue(key, out var accumulator))
+        {
+            accumulator.Count++;
+            edgeMap[key] = accumulator;
+        }
+        else
+        {
+            edgeMap[key] = new EdgeAccumulator
+            {
+                Count = 1,
+                Orientation = new OrientedEdge(start, end, 0f)
+            };
+        }
+    }
+
+    private static short AddVertex(List<VertexPositionColorTexture> vertices, VertexPositionColorTexture vertex)
+    {
+        if (vertices.Count >= short.MaxValue)
+            throw new InvalidOperationException("Primitive mesh exceeded 16-bit vertex capacity.");
+        vertices.Add(vertex);
+        return (short)(vertices.Count - 1);
+    }
+
+    private static short AddVertex(List<VertexPositionColor> vertices, VertexPositionColor vertex)
+    {
+        if (vertices.Count >= short.MaxValue)
+            throw new InvalidOperationException("Primitive mesh exceeded 16-bit vertex capacity.");
+        vertices.Add(vertex);
+        return (short)(vertices.Count - 1);
+    }
+
+    private readonly struct EdgeKey : IEquatable<EdgeKey>
+    {
+        public readonly short Min;
+        public readonly short Max;
+
+        public EdgeKey(short min, short max)
+        {
+            Min = min;
+            Max = max;
+        }
+
+        public bool Equals(EdgeKey other) => Min == other.Min && Max == other.Max;
+
+        public override bool Equals(object? obj) => obj is EdgeKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return (Min * 397) ^ Max;
+            }
+        }
+    }
+
+    private struct EdgeAccumulator
+    {
+        public int Count;
+        public OrientedEdge Orientation;
+    }
+
+    private struct OrientedEdge
+    {
+        public short Start;
+        public short End;
+        public float Length;
+
+        public OrientedEdge(short start, short end, float length)
+        {
+            Start = start;
+            End = end;
+            Length = length;
+        }
+
+        public OrientedEdge Reversed() => new OrientedEdge(End, Start, Length);
+    }
+}
+
 public enum StripCapStyle
 {
     None,
@@ -396,7 +858,6 @@ public enum StripCurveType
 
 public static class TriangleStripBuilder
 {
-    private const float Epsilon = 1e-6f;
 
     /// <summary>
     /// Builds a triangle strip mesh along the specified path with a uniform color. <para/>
@@ -1275,8 +1736,6 @@ public static class TriangleStripBuilder
 
 public static class PrimitiveShapeBuilder
 {
-    private const float Epsilon = 1e-6f;
-
     public static PrimitiveMesh BuildRectangularQuad(
         Vector3 center,
         Vector2 size,
@@ -1379,8 +1838,7 @@ public static class PrimitiveShapeBuilder
         return new PrimitiveMesh(colorVertices, colorIndices, PrimitiveType.TriangleList);
     }
 
-    // TODO: Fix UVs
-    public static PrimitiveMesh BuildPolygon(IReadOnlyList<Vector3> points, Color color, bool textured = false)
+    public static PrimitiveMesh BuildArbitraryPolygon(IReadOnlyList<Vector3> points, Color color, bool textured = false)
     {
         if (points == null)
             throw new ArgumentNullException(nameof(points));
@@ -1389,11 +1847,26 @@ public static class PrimitiveShapeBuilder
 
         if (textured)
         {
+            float minX = points[0].X, maxX = points[0].X;
+            float minY = points[0].Y, maxY = points[0].Y;
+            for (int i = 1; i < points.Count; i++)
+            {
+                var p = points[i];
+                if (p.X < minX) minX = p.X;
+                if (p.X > maxX) maxX = p.X;
+                if (p.Y < minY) minY = p.Y;
+                if (p.Y > maxY) maxY = p.Y;
+            }
+            float width = Math.Max(maxX - minX, Epsilon);
+            float height = Math.Max(maxY - minY, Epsilon);
+
             var texturedVertices = new VertexPositionColorTexture[points.Count];
             for (int i = 0; i < points.Count; i++)
             {
                 var point = points[i];
-                texturedVertices[i] = new VertexPositionColorTexture(point, color, new Vector2(0f, 0f));
+                float u = (point.X - minX) / width;
+                float v = (point.Y - minY) / height;
+                texturedVertices[i] = new VertexPositionColorTexture(point, color, new Vector2(u, v));
             }
 
             var indices = new short[(points.Count - 2) * 3];
@@ -1450,7 +1923,7 @@ public static class PrimitiveShapeBuilder
             for (int i = 0; i < segments; i++)
             {
                 var offset = EllipseDirection(i, segments, right, up, radii);
-                var point = center + offset;
+                               var point = center + offset;
 
                 float u = 0.5f + 0.5f * MathHelper.Clamp(Vector3.Dot(offset, right) / safeX, -1f, 1f);
                 float v = 0.5f - 0.5f * MathHelper.Clamp(Vector3.Dot(offset, up) / safeY, -1f, 1f);
@@ -1644,7 +2117,7 @@ public static class PrimitiveShapeBuilder
             var texturedVertices = new VertexPositionColorTexture[segments + 2];
             texturedVertices[0] = new VertexPositionColorTexture(center, color, new Vector2(0.5f, 1f));
 
-            float safeRadius = Math.Max(radius, Epsilon);
+            float safeRadius = Math.Max(radius, Epsilon); // todo: remove
             float newStep = MathF.PI / segments;
 
             for (int i = 0; i <= segments; i++)
@@ -1735,12 +2208,19 @@ public static class PrimitiveShapeBuilder
 
 public class TestPrimitiveRenderSystem : ModSystem
 {
+    private static ParticleWorld? Testicles;
+    private static ParticleComponentHandle<float> _wobbleHandle;
+
     public override void PostDrawInterface(SpriteBatch spriteBatch)
     {
         if (!PrimitiveRenderer.IsReady)
             return;
 
         Main.spriteBatch.End(out var ss);
+
+        float deltaTime = 1f / (Main.frameRate <= 0 ? 60f : Main.frameRate);
+        EnsureParticleDemo(deltaTime);
+
 
         var path = new List<Vector3>
             {
@@ -1815,7 +2295,8 @@ public class TestPrimitiveRenderSystem : ModSystem
             new Vector2(120f, 70f),
             Color.CadetBlue,
             Vector3.Backward,
-            Vector3.Up, true);
+            Vector3.Up, true)
+            .Scale(new Vector3(1.15f, 0.85f, 1f));
 
         PrimitiveRenderer.DrawMesh(
             Matrix.Identity, view, projection,
@@ -1835,7 +2316,7 @@ public class TestPrimitiveRenderSystem : ModSystem
             hexagon,
             blendState: BlendState.AlphaBlend);
 
-        var polygon = PrimitiveShapeBuilder.BuildPolygon(
+        var polygon = PrimitiveShapeBuilder.BuildArbitraryPolygon(
             new[]
             {
                 new Vector3(520f, 260f, 0f),
@@ -1852,18 +2333,29 @@ public class TestPrimitiveRenderSystem : ModSystem
             polygon,
             blendState: BlendState.AlphaBlend);
 
+        var particleMesh = Testicles!.BuildBillboards(depth: -40f, textured: true);
+        if (particleMesh.IsValid)
+        {
+            PrimitiveRenderer.DrawMesh(
+                Matrix.Identity, view, projection,
+                particleMesh,
+                blendState: BlendState.Additive);
+        }
+
         var ellipse = PrimitiveShapeBuilder.BuildEllipse(
-            new Vector3(600f, 420f, 0f),
-            new Vector2(90f, 45f),
+            new Vector3(1200f, 420f, 0f),
+            new Vector2(90f, 90f),
             segments: 48,
             color: Color.MediumPurple,
             normal: -Vector3.Backward,
-            upHint: -Vector3.Up, true);
+            upHint: -Vector3.Up, true)
+            .CurveEdges(-Vector3.UnitZ, 80f, 4).Extrude(Vector3.UnitZ * (50f * MathF.Sin(Main.GlobalTimeWrappedHourly * 4)), true).Scale(new Vector3(1.00f, 1.00f, 1f))
+            .Rotate(Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.Sin(Main.GlobalTimeWrappedHourly)) / Quaternion.CreateFromYawPitchRoll(0.1f * MathF.Sin(Main.GlobalTimeWrappedHourly), 0f, 0f));
 
         PrimitiveRenderer.DrawMesh(
             Matrix.Identity, view, projection,
             ellipse,
-            blendState: BlendState.AlphaBlend);
+            blendState: BlendStates.Multiplicative);
 
         var semiCircle = PrimitiveShapeBuilder.BuildSemiCircle(
             new Vector3(860f, 420f, 0f),
@@ -1941,6 +2433,56 @@ public class TestPrimitiveRenderSystem : ModSystem
         Main.spriteBatch.Begin(ss);
     }
 
+    private static void EnsureParticleDemo(float deltaTime)
+    {
+        var world = Testicles;
+        if (world == null)
+        {
+            world = new ParticleWorld(512)
+            {
+                DefaultTexture = Assets.Images.Particles.Star2.Asset.Value
+            };
+            _wobbleHandle = world.RegisterComponent<float>(0f);
+            Testicles = world;
+        }
+
+        if (world.Count < 96)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                world.Emit((entity, w) =>
+                {
+                    
+                    Vector2 spawn = new Vector2(960f + Main.rand.NextFloat(-48f, 48f), 620f + Main.rand.NextFloat(-28f, 28f));
+                    w.SetPosition(entity, spawn);
+                    w.SetVelocity(entity, new Vector2(Main.rand.NextFloat(-40f, 40f), Main.rand.NextFloat(-120f, -80f)));
+                    w.SetAcceleration(entity, new Vector2(0f, 180f));
+                    w.SetLifetime(entity, Main.rand.NextFloat(1.1f, 3.6f));
+                    w.SetColor(entity, Color.Lerp(Color.BlueViolet, Color.DarkRed, Main.rand.NextFloat()));
+                    w.SetScale(entity, Vector2.One * Main.rand.NextFloat(0.45f, 0.9f));
+                    w.SetRotation(entity, Main.rand.NextFloat(MathHelper.TwoPi));
+                    w.SetTextureRegion(entity, new Rectangle(0, 0, Assets.Images.Particles.Star2.Asset.Value.Width, Assets.Images.Particles.Star2.Asset.Value.Height));
+                    ref float wobble = ref w.AddComponent(entity, _wobbleHandle);
+                    wobble = Main.rand.NextFloat(MathHelper.TwoPi);
+                });
+            }
+        }
+
+        world.Update(deltaTime, new Vector2(0f, 120f));
+
+        world.ForEach(entity =>
+        {
+            if (!world.HasComponent(entity, _wobbleHandle))
+                return;
+            ref float wobble = ref world.GetComponent(entity, _wobbleHandle);
+            wobble += deltaTime * 3f;
+            float swing = MathF.Sin(wobble);
+            float pulse = .2f + 0.4f * MathF.Abs(MathF.Cos(wobble));
+            world.SetRotation(entity, swing * 0.6f);
+            world.SetScale(entity, Vector2.One * pulse);
+        });
+    }
+
     public static class ConstraintExamples
     {
         private static VerletRope? verletRope = new VerletRope(
@@ -1973,8 +2515,8 @@ public class TestPrimitiveRenderSystem : ModSystem
 
             ConfigureFabrikConstraints(chain, root, segmentLength);
 
-            float logicFps = Main.frameRate <= 0 ? 60f : Main.frameRate;
-            float deltaTime = 1f / logicFps;
+            float fps = Main.frameRate <= 0 ? 60f : 1f / Main.frameRate;
+            float deltaTime = 1f / fps;
 
             chain.Responsiveness = 12f;
             chain.ResetJoint(0, root, resetHistory: true);
@@ -1995,8 +2537,8 @@ public class TestPrimitiveRenderSystem : ModSystem
                 width,
                 colors,
                 smoothingSegments: 0,
-                joinStyle: StripJoinStyle.Perpendicular,
-                textured: false,
+                joinStyle: StripJoinStyle.Miter,
+                textured: true,
                 startCap: StripCapStyle.HalfCircle,
                 endCap: StripCapStyle.HalfCircle);
         }
@@ -2021,7 +2563,7 @@ public class TestPrimitiveRenderSystem : ModSystem
 
         private static void ConfigureFabrikConstraints(FabrikChain chain, Vector3 root, float segmentLength)
         {
-            float maxRadius = segmentLength * (chain.JointCount - 1) * 1.05f;
+            float maxRadius = segmentLength * (chain.JointCount - 1) * 1.0f;
             chain.Responsiveness = 9f;
 
             for (int i = 0; i < chain.JointCount; i++)

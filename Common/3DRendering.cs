@@ -2216,6 +2216,7 @@ public class TestPrimitiveRenderSystem : ModSystem
         if (!PrimitiveRenderer.IsReady)
             return;
 
+            return;
         Main.spriteBatch.End(out var ss);
 
         float deltaTime = 1f / (Main.frameRate <= 0 ? 60f : Main.frameRate);

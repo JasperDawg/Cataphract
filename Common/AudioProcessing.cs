@@ -618,6 +618,7 @@ public sealed class TestMusicFilterSystem : ModSystem
     private readonly BitCrusherEffect _bitTexture = new() { Bits = 14, DownsampleFactor = 1f };
     private readonly LowPassOnePoleFilter _lowPassMaster = new() { Cutoff = 20000f };
     private readonly HighPassOnePoleFilter _highPassMaster = new() { Cutoff = 200f };
+    private readonly BandPassBiquadFilter _masterBand = new() { Frequency = 1000f, Q = 1f };
 
     private DynamicSoundEffectInstance? _exampleInstance;
     private float _timeAccumulator;
@@ -660,10 +661,8 @@ public sealed class TestMusicFilterSystem : ModSystem
         processor.AddEffect(_tremolo);
         processor.AddEffect(_delay);
         processor.AddEffect(_widener);
+        processor.AddEffect(_masterBand);
 
-        processor.AddEffect(_rumbleCut);
-        processor.AddEffect(_sparkle);
-        processor.AddEffect(_presence);
 
         processor.AddEffect(_saturator);
 
@@ -690,8 +689,8 @@ public sealed class TestMusicFilterSystem : ModSystem
             _exampleInstance.SubmitFloatBufferEXT(_processedSamples);
         }
 
-        _lowPassMaster.Cutoff = 20000f * (Main.player[Main.myPlayer].velocity.Length() * 30f);
-        _highPassMaster.Cutoff = 0f + (Main.player[Main.myPlayer].velocity.Length() * 15f);
+        _lowPassMaster.Cutoff = 10000f;
+        _highPassMaster.Cutoff = 500f + (Main.player[Main.myPlayer].velocity.Length() * 1000f);
         foreach (SlotVector<ActiveSound>.ItemPair item in (IEnumerable<SlotVector<ActiveSound>.ItemPair>)SoundEngine.SoundPlayer._trackedSounds)
         {
             ActiveSound value = item.Value;
@@ -699,43 +698,100 @@ public sealed class TestMusicFilterSystem : ModSystem
                 continue;
             value.Sound = value.Sound?.parentEffect.CreateProcessedInstance(FactDspContext.Processor, out _, true);
 
-            var audioSystem = Main.audioSystem as LegacyAudioSystem;
-            foreach (var audioTrack in audioSystem!.AudioTracks)
+
+        }
+    }
+
+    public override void PreUpdateEntities()
+    {
+        var audioSystem = Main.audioSystem as LegacyAudioSystem;
+        foreach (var audioTrack in audioSystem!.AudioTracks)
+        {
+
+            if (audioTrack is ASoundEffectBasedAudioTrack track)
             {
-                if (audioTrack is CueAudioTrack soundTrack)
-                {
-                    if (!soundTrack.IsPlaying)
+                var handle = track._soundEffectInstance.handle;
+
+            }
+
+            #region  Work In Progress
+            if (audioTrack is CueAudioTrack soundTrack)
+            {
+                if (!soundTrack.IsPlaying || soundTrack.IsStopped)
                     continue;
-                    var handle = soundTrack._cue.handle;
-                    var size = Marshal.SizeOf(handle);
-
-                    return; // TODO: come back
-
-                    unsafe
+                var handle = soundTrack._cue.handle;
+                var size = Marshal.SizeOf(handle);
+                unsafe
+                {
+                    try
                     {
+                        Native_FACTCue* nativeCue = (Native_FACTCue*)handle;
+                        if (nativeCue == null || nativeCue->playingSound == null)
+                            continue;
+
+                        var tracks = nativeCue->playingSound->tracks;
+                        if (tracks == null)
+                            continue;
+
+                        var wave = tracks->activeWave.wave;
+                        if (wave == null || wave->streamCache == null || wave->streamSize == 0)
+                            continue;
+
+                        int byteCount = (int)wave->streamSize;
+                        var buffer = ArrayPool<byte>.Shared.Rent(byteCount);
+
+                        return;
                         try
                         {
-                            Native_FACTCue* nativeCue = (Native_FACTCue*)handle;
-                            Native_FactWave* wave = nativeCue->playingSound->tracks->activeWave.wave;
-                            var buffer = ArrayPool<byte>.Shared.Rent((int)wave->streamSize);
-                            if (wave->streamCache != null && wave->streamSize > 0)
+                            Marshal.Copy((IntPtr)wave->streamCache, buffer, 0, byteCount);
+                            int sampleCount = byteCount / sizeof(short);
+                            if (sampleCount <= 0)
+                                continue;
+
+                            var shortSpan = MemoryMarshal.Cast<byte, short>(buffer.AsSpan(0, sampleCount * sizeof(short)));
+                            var floatSamples = ArrayPool<float>.Shared.Rent(sampleCount);
+                            try
                             {
-                                Marshal.Copy((IntPtr)wave->streamCache, buffer, 0, (int)wave->streamSize);
-                                int sampleCount = (int)(wave->streamSize / sizeof(short));
-                                // this captures data successfully, but only for a short period of time
-                                // TODO: fix
+                                for (int i = 0; i < sampleCount; i++)
+                                    if (i < shortSpan.Length)
+                                        floatSamples[i] = MathHelper.Clamp(shortSpan[i] / 32768f, -1f, 1f);
+
+                                int channels = (int)(nativeCue->srcChannels != 0 ? nativeCue->srcChannels : (uint)Math.Max(1, _channelCount));
+                                if (channels <= 0)
+                                    channels = 1;
+
+                                FactDspContext.Processor.SetSampleRate(Math.Max(_sampleRate, 1000f));
+                                FactDspContext.Processor.ProcessBuffer(floatSamples, channels);
+
+                                for (int i = 0; i < sampleCount; i++)
+                                    if (i < shortSpan.Length)
+                                        shortSpan[i] = (short)Math.Clamp(MathF.Round(floatSamples[i] * 32767f), short.MinValue, short.MaxValue);
+
+                                Marshal.Copy(buffer, 0, (IntPtr)wave->streamCache, sampleCount * sizeof(short));
+                            }
+                            finally
+                            {
+                                ArrayPool<float>.Shared.Return(floatSamples);
                             }
                         }
-                        catch
+                        finally
                         {
-                            throw;
+                            ArrayPool<byte>.Shared.Return(buffer);
                         }
+                    }
+                    catch
+                    {
+                        throw;
                     }
                 }
             }
+            #endregion
         }
+
+        base.PreUpdateEntities();
     }
 }
+
 
 [StructLayout(LayoutKind.Sequential)]
 unsafe struct Native_FACTCue
@@ -766,15 +822,17 @@ unsafe struct Native_FACTCue
     public uint dstChannels;
 }
 [StructLayout(LayoutKind.Explicit)]
-unsafe struct FAUDIONAMELESSDeity {
+unsafe struct FAUDIONAMELESSDeity
+{
     [FieldOffset(0)]
     void* variation;
     [FieldOffset(0)]
     void* sound;
 }
 [StructLayout(LayoutKind.Sequential)]
-unsafe struct Native_FactWave {
-        /* Engine references */
+unsafe struct Native_FactWave
+{
+    /* Engine references */
     void* parentBank;
     void* parentCue;
     ushort index;
@@ -790,61 +848,217 @@ unsafe struct Native_FactWave {
     public uint streamOffset;
     public byte* streamCache;
     /* FAudio references */
+    ushort srcChannels;
+    public FAudioVoice* voice;
 }
+
+
 [StructLayout(LayoutKind.Sequential)]
 unsafe struct FACTSoundInstance
 {
-	/* Base Sound reference */
-	void* sound;
+    /* Base Sound reference */
+    void* sound;
 
-	/* Per-instance track information */
-	public FACTTrackInstance* tracks;
+    /* Per-instance track information */
+    public FACTTrackInstance* tracks;
 
-	/* RPC instance data */
-	void* rpcData;
+    /* RPC instance data */
+    void* rpcData;
 
-	/* Fade data */
-	uint fadeStart;
-	ushort fadeTarget;
-	byte fadeType; /* In (1), Out (2), Release RPC (3) */
+    /* Fade data */
+    uint fadeStart;
+    ushort fadeTarget;
+    byte fadeType; /* In (1), Out (2), Release RPC (3) */
 
-	/* Engine references */
-	void* parentCue;
-}   
+    /* Engine references */
+    void* parentCue;
+}
 
 [StructLayout(LayoutKind.Sequential)]
 unsafe struct FACTTrackInstance
 {
-	/* Tracks which events have fired */
-	void* events;
+    /* Tracks which events have fired */
+    void* events;
 
-	/* RPC instance data */
-	FACTInstanceRPCData rpcData;
+    /* RPC instance data */
+    FACTInstanceRPCData rpcData;
 
-	/* SetPitch/SetVolume data */
-	float evtPitch;
-	float evtVolume;
+    /* SetPitch/SetVolume data */
+    float evtPitch;
+    float evtVolume;
 
-	/* Wave playback */
+    /* Wave playback */
     public WaveHandle activeWave, upcomingWave;
-	void* waveEvt;
-	void* waveEvtInst;
+    void* waveEvt;
+    void* waveEvtInst;
 }
 
 [StructLayout(LayoutKind.Sequential)]
-unsafe struct WaveHandle {
-    	public Native_FactWave* wave;
-		float baseVolume;
-		ushort basePitch;
-		float baseQFactor;
-		float baseFrequency;
+unsafe struct WaveHandle
+{
+    public Native_FactWave* wave;
+    float baseVolume;
+    ushort basePitch;
+    float baseQFactor;
+    float baseFrequency;
 }
 [StructLayout(LayoutKind.Sequential)]
 struct FACTInstanceRPCData
 {
-	float rpcVolume;
-	float rpcPitch;
-	float rpcReverbSend;
-	float rpcFilterFreq;
-	float rpcFilterQFactor;
+    float rpcVolume;
+    float rpcPitch;
+    float rpcReverbSend;
+    float rpcFilterFreq;
+    float rpcFilterQFactor;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct FAudioVoice
+{
+    void* audio;
+    uint flags;
+    FAudioVoiceType type;
+
+    FAudioVoiceSends sends;
+    float** sendCoefficients;
+    float** mixCoefficients;
+    void* sendMix;
+    void* sendFilter;
+    void** sendFilterState;
+    AudioEffectsStruct effects;
+    FAudioFilterParametersEXT filter;
+    void* filterState;
+    void* sendLock;
+    void* effectLock;
+    void* filterLock;
+
+    float volume;
+    float* channelVolume;
+    uint outputChannels;
+    void* volumeLock;
+
+    FAUDIONAMELESSDeityTwo union;
+}
+
+
+enum FAudioVoiceType
+{
+    FAUDIO_VOICE_SOURCE,
+    FAUDIO_VOICE_SUBMIX,
+    FAUDIO_VOICE_MASTER
+};
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct FAudioVoiceSends
+{
+    uint SendCount;
+    void* pSends;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct AudioEffectsStruct
+{
+    FAPOBufferFlags state;
+    uint count;
+    void* desc;
+    void** parameters;
+    uint* parameterSizes;
+    byte* parameterUpdates;
+    byte* inPlaceProcessing;
+}
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct MixStruct
+{
+    /* Sample storage */
+    uint inputSamples;
+    uint outputSamples;
+    float* inputCache;
+    ulong resampleStep;
+    void* resample;
+
+    /* Read-only */
+    uint inputChannels;
+    uint inputSampleRate;
+    uint processingStage;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct SourceStruct
+{
+    /* Sample storage */
+    uint decodeSamples;
+    uint resampleSamples;
+
+    /* Resampler */
+    float resampleFreq;
+    ulong resampleStep;
+    ulong resampleOffset;
+    ulong curBufferOffsetDec;
+    uint curBufferOffset;
+
+    /* WMA decoding */
+    void* wmadec; // void struct FAudioWMADEC *, wmadec optional
+
+    /* Read-only */
+    float maxFreqRatio;
+    void* format; // FAudioWaveFormatEx
+    void* decode;
+    void* resample;
+    void* callback; // FAudioVoiceCallback
+
+    /* Dynamic */
+    byte active;
+    float freqRatio;
+    byte newBuffer;
+    ulong totalSamples;
+    void* bufferList;
+    void* flushList;
+    void* bufferLock;
+}
+
+unsafe struct MasterStruct
+
+{
+    /* Output stream, allocated by Platform */
+    float* output;
+
+    /* Needed when inputChannels != outputChannels */
+    float* effectCache;
+
+    /* Read-only */
+    uint inputChannels;
+    uint inputSampleRate;
+}
+[StructLayout(LayoutKind.Explicit)]
+unsafe struct FAUDIONAMELESSDeityTwo
+{
+    [FieldOffset(0)]
+    SourceStruct src;
+    [FieldOffset(0)]
+    MixStruct mix;
+    [FieldOffset(0)]
+    MasterStruct master;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct FAudioFilterParametersEXT
+{
+	FAudioFilterType Type;
+	float Frequency;	/* [0, FAUDIO_MAX_FILTER_FREQUENCY] */
+	float OneOverQ;		/* [0, FAUDIO_MAX_FILTER_ONEOVERQ] */
+	float WetDryMix;	/* [0, 1] */
+}
+
+enum FAudioFilterType
+{
+	FAudioLowPassFilter,
+	FAudioBandPassFilter,
+	FAudioHighPassFilter,
+	FAudioNotchFilter
+};
+
+enum FAPOBufferFlags
+{
+	FAPO_BUFFER_SILENT,
+	FAPO_BUFFER_VALID
 }

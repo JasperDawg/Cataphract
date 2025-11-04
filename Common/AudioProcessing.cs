@@ -704,14 +704,21 @@ public sealed class TestMusicFilterSystem : ModSystem
 
     public override void PreUpdateEntities()
     {
+        return; // TODO: Live modify ASoundEffectBasedAudioTrack, see if you can modify CueAudioTrack maybe in the far future
         var audioSystem = Main.audioSystem as LegacyAudioSystem;
         foreach (var audioTrack in audioSystem!.AudioTracks)
         {
 
             if (audioTrack is ASoundEffectBasedAudioTrack track)
             {
-                var handle = track._soundEffectInstance.handle;
+                unsafe
+                {
+                    FAudioVoice* handle = (FAudioVoice*)track._soundEffectInstance.handle;
+                    if (handle == null)
+                        continue;
 
+                        handle = null;
+                }
             }
 
             #region  Work In Progress
@@ -720,7 +727,7 @@ public sealed class TestMusicFilterSystem : ModSystem
                 if (!soundTrack.IsPlaying || soundTrack.IsStopped)
                     continue;
                 var handle = soundTrack._cue.handle;
-                var size = Marshal.SizeOf(handle);
+
                 unsafe
                 {
                     try
@@ -915,33 +922,30 @@ struct FACTInstanceRPCData
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct FAudioVoice
 {
-    void* audio;
-    uint flags;
-    FAudioVoiceType type;
-
-    FAudioVoiceSends sends;
-    float** sendCoefficients;
-    float** mixCoefficients;
-    void* sendMix;
-    void* sendFilter;
-    void** sendFilterState;
-    AudioEffectsStruct effects;
-    FAudioFilterParametersEXT filter;
-    void* filterState;
-    void* sendLock;
-    void* effectLock;
-    void* filterLock;
-
-    float volume;
-    float* channelVolume;
-    uint outputChannels;
-    void* volumeLock;
-
-    FAUDIONAMELESSDeityTwo union;
+    public void* audio;
+    public uint flags;
+    public FAudioVoiceType type;
+    public FAudioVoiceSends sends;
+    public float** sendCoefficients;
+    public float** mixCoefficients;
+    public void* sendMix;
+    public void* sendFilter;
+    public void** sendFilterState;
+    public AudioEffectsStruct effects;
+    public FAudioFilterParametersEXT filter;
+    public void* filterState;
+    public void* sendLock;
+    public void* effectLock;
+    public void* filterLock;
+    public float volume;
+    public float* channelVolume;
+    public uint outputChannels;
+    public void* volumeLock;
+    public FAUDIONAMELESSDeityTwo union;
 }
 
 
-enum FAudioVoiceType
+public enum FAudioVoiceType : uint
 {
     FAUDIO_VOICE_SOURCE,
     FAUDIO_VOICE_SUBMIX,
@@ -956,7 +960,7 @@ public unsafe struct FAudioVoiceSends
 }
 
 [StructLayout(LayoutKind.Sequential)]
-unsafe struct AudioEffectsStruct
+public unsafe struct AudioEffectsStruct
 {
     FAPOBufferFlags state;
     uint count;
@@ -967,7 +971,7 @@ unsafe struct AudioEffectsStruct
     byte* inPlaceProcessing;
 }
 [StructLayout(LayoutKind.Sequential)]
-unsafe struct MixStruct
+public unsafe struct MixStruct
 {
     /* Sample storage */
     uint inputSamples;
@@ -983,7 +987,7 @@ unsafe struct MixStruct
 }
 
 [StructLayout(LayoutKind.Sequential)]
-unsafe struct SourceStruct
+public unsafe struct SourceStruct
 {
     /* Sample storage */
     uint decodeSamples;
@@ -1001,7 +1005,7 @@ unsafe struct SourceStruct
 
     /* Read-only */
     float maxFreqRatio;
-    void* format; // FAudioWaveFormatEx
+    FAudioWaveFormatEx* format; // FAudioWaveFormatEx
     void* decode;
     void* resample;
     void* callback; // FAudioVoiceCallback
@@ -1011,12 +1015,25 @@ unsafe struct SourceStruct
     float freqRatio;
     byte newBuffer;
     ulong totalSamples;
-    void* bufferList;
-    void* flushList;
+    FAudioBufferEntry* bufferList;
+    FAudioBufferEntry* flushList;
     void* bufferLock;
 }
 
-unsafe struct MasterStruct
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct FAudioWaveFormatEx
+{
+	ushort wFormatTag;
+	ushort nChannels;
+	uint nSamplesPerSec;
+	uint nAvgBytesPerSec;
+	ushort nBlockAlign;
+	ushort wBitsPerSample;
+	ushort cbSize;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct MasterStruct
 
 {
     /* Output stream, allocated by Platform */
@@ -1029,36 +1046,81 @@ unsafe struct MasterStruct
     uint inputChannels;
     uint inputSampleRate;
 }
+
 [StructLayout(LayoutKind.Explicit)]
-unsafe struct FAUDIONAMELESSDeityTwo
+public unsafe struct FAUDIONAMELESSDeityTwo
 {
     [FieldOffset(0)]
-    SourceStruct src;
+    public SourceStruct src;
     [FieldOffset(0)]
-    MixStruct mix;
+    public MixStruct mix;
     [FieldOffset(0)]
-    MasterStruct master;
+    public MasterStruct master;
 }
 
 [StructLayout(LayoutKind.Sequential)]
-unsafe struct FAudioFilterParametersEXT
+public unsafe struct FAudioFilterParametersEXT
 {
-	FAudioFilterType Type;
-	float Frequency;	/* [0, FAUDIO_MAX_FILTER_FREQUENCY] */
-	float OneOverQ;		/* [0, FAUDIO_MAX_FILTER_ONEOVERQ] */
-	float WetDryMix;	/* [0, 1] */
+    FAudioFilterType Type;
+    float Frequency;    /* [0, FAUDIO_MAX_FILTER_FREQUENCY] */
+    float OneOverQ;     /* [0, FAUDIO_MAX_FILTER_ONEOVERQ] */
+    float WetDryMix;	/* [0, 1] */
 }
 
 enum FAudioFilterType
 {
-	FAudioLowPassFilter,
-	FAudioBandPassFilter,
-	FAudioHighPassFilter,
-	FAudioNotchFilter
+    FAudioLowPassFilter,
+    FAudioBandPassFilter,
+    FAudioHighPassFilter,
+    FAudioNotchFilter
 };
 
 enum FAPOBufferFlags
 {
-	FAPO_BUFFER_SILENT,
-	FAPO_BUFFER_VALID
+    FAPO_BUFFER_SILENT,
+    FAPO_BUFFER_VALID
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct FAudioBufferEntry
+{
+	public FAudio.FAudioBuffer buffer;
+	public FAudio.FAudioBufferWMA bufferWMA;
+	public FAudioBufferEntry *next;
+};
+
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct FAudioBuffer
+{
+	/* Either 0 or FAUDIO_END_OF_STREAM */
+	uint Flags;
+	/* Pointer to wave data, memory block size.
+	 * Note that pAudioData is not copied; FAudio reads directly from your
+	 * pointer! This pointer must be valid until FAudio has finished using
+	 * it, at which point an OnBufferEnd callback will be generated.
+	 */
+	uint AudioBytes;
+	byte* pAudioData;
+	/* Play region, in sample frames. */
+	uint PlayBegin;
+	uint PlayLength;
+	/* Loop region, in sample frames.
+	 * This can be used to loop a subregion of the wave instead of looping
+	 * the whole thing, i.e. if you have an intro/outro you can set these
+	 * to loop the middle sections instead. If you don't need this, set both
+	 * values to 0.
+	 */
+	uint LoopBegin;
+	uint LoopLength;
+	/* [0, FAUDIO_LOOP_INFINITE] */
+	uint LoopCount;
+	/* This is sent to callbacks as pBufferContext */
+	void* pContext;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+unsafe struct FAudioBufferWMA
+{
+	uint* pDecodedPacketCumulativeBytes;
+	uint PacketCount;
 }

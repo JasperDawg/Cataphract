@@ -31,60 +31,19 @@ public readonly struct RenderTargetDescriptor
 
 public sealed class RenderTargetPool : IDisposable
 {
-    private readonly struct Key : IEquatable<Key>
+    private record struct Key(int Width, int Height, SurfaceFormat Format, DepthFormat Depth, int Samples, RenderTargetUsage Usage, bool Mip)
     {
-        private readonly int _width;
-        private readonly int _height;
-        private readonly SurfaceFormat _format;
-        private readonly DepthFormat _depth;
-        private readonly int _samples;
-        private readonly RenderTargetUsage _usage;
-        private readonly bool _mip;
-
-        public Key(int width, int height, RenderTargetDescriptor descriptor)
+        public Key(int width, int height, RenderTargetDescriptor descriptor) : this(width, height, descriptor.Format, descriptor.Depth, descriptor.MultiSampleCount, descriptor.Usage, descriptor.GenerateMipmaps)
         {
-            _width = width;
-            _height = height;
-            _format = descriptor.Format;
-            _depth = descriptor.Depth;
-            _samples = descriptor.MultiSampleCount;
-            _usage = descriptor.Usage;
-            _mip = descriptor.GenerateMipmaps;
         }
 
-        public Key(RenderTarget2D target)
+        public Key(RenderTarget2D target) : this(target.Width, target.Height, new RenderTargetDescriptor(
+            target.Format,
+            target.DepthStencilFormat,
+            target.MultiSampleCount,
+            target.RenderTargetUsage,
+            target.LevelCount > 1))
         {
-            _width = target.Width;
-            _height = target.Height;
-            _format = target.Format;
-            _depth = target.DepthStencilFormat;
-            _samples = target.MultiSampleCount;
-            _usage = target.RenderTargetUsage;
-            _mip = target.LevelCount > 1;
-        }
-
-        public bool Equals(Key other) =>
-            _width == other._width &&
-            _height == other._height &&
-            _format == other._format &&
-            _depth == other._depth &&
-            _samples == other._samples &&
-            _usage == other._usage &&
-            _mip == other._mip;
-
-        public override bool Equals(object? obj) => obj is Key other && Equals(other);
-
-        public override int GetHashCode()
-        {
-            var hash = new HashCode();
-            hash.Add(_width);
-            hash.Add(_height);
-            hash.Add((int)_format);
-            hash.Add((int)_depth);
-            hash.Add(_samples);
-            hash.Add((int)_usage);
-            hash.Add(_mip);
-            return hash.ToHashCode();
         }
     }
 
@@ -258,7 +217,6 @@ public static class OutlineRenderer
 
         using (var scope = new RenderTargetScope(device, contentLease.Target, true, Color.Transparent))
         {
-
             passBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend);
             drawContent(passBatch);
             passBatch.End();
@@ -293,13 +251,76 @@ public static class OutlineRenderer
     }
 }
 
-static class SizeMatrices {
-    public static readonly Matrix Half = Matrix.CreateScale(0.5f, 0.5f, 0.5f);
-    public static readonly Matrix Double = Matrix.CreateScale(2f, 2f, 2f);
+public static class SizeMatrices {
+    public static readonly Matrix Half = Matrix.CreateScale(0.5f, 0.5f, 1f);
+    public static readonly Matrix Double = Matrix.CreateScale(2f, 2f, 1f);
 
     public static Vector2 Scale(this Vector2 vector, Matrix matrix) =>
         new(
             matrix.M11 * vector.X,
             matrix.M22 * vector.Y
         );
+
+    public static Vector2 Transform(this Vector2 vector, Matrix matrix) =>
+            Vector2.Transform(vector, matrix);  
+}
+
+public static class SpritebatchExtensions {
+	public static RenderTargetPool.RenderTargetLease DrawHalfScaledToTarget(
+		this SpriteBatch spriteBatch,
+		GraphicsDevice device,
+		RenderTargetPool pool,
+		Point targetSize,
+		Action<SpriteBatch> drawAction,
+		bool clear = true,
+		Color? clearColor = null,
+		RenderTargetDescriptor? descriptor = null,
+		SpriteSortMode sortMode = SpriteSortMode.Deferred,
+		BlendState? blendState = null,
+		SamplerState? samplerState = null,
+		DepthStencilState? depthStencilState = null,
+		RasterizerState? rasterizerState = null,
+		Effect? effect = null, bool screenPositionOffset = true)
+	{
+		if (spriteBatch == null)
+			throw new ArgumentNullException(nameof(spriteBatch));
+		if (device == null)
+			throw new ArgumentNullException(nameof(device));
+		if (pool == null)
+			throw new ArgumentNullException(nameof(pool));
+		if (drawAction == null)
+			throw new ArgumentNullException(nameof(drawAction));
+
+		var lease = pool.Rent(
+			device,
+			Math.Max(1, targetSize.X),
+			Math.Max(1, targetSize.Y),
+			descriptor ?? RenderTargetDescriptor.Default);
+
+		using (var scope = new RenderTargetScope(device, lease.Target, clear, clearColor))
+		{
+			var transform = SizeMatrices.Half + (screenPositionOffset
+                ? Matrix.CreateTranslation(-Main.screenPosition.X * 0.5f, -Main.screenPosition.Y * 0.5f, 0f)
+                : Matrix.Identity);
+                
+			spriteBatch.Begin(
+				sortMode,
+				blendState ?? BlendState.AlphaBlend,
+				samplerState ?? SamplerState.LinearClamp,
+				depthStencilState ?? DepthStencilState.None,
+				rasterizerState ?? RasterizerState.CullCounterClockwise,
+				effect,
+				transform);
+			try
+			{
+				drawAction(spriteBatch);
+			}
+			finally
+			{
+				spriteBatch.End();
+			}
+		}
+
+		return lease;
+	}
 }

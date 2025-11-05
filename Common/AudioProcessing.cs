@@ -879,7 +879,7 @@ public sealed class TestMusicFilterSystem : ModSystem
     private readonly TremoloEffect _tremolo = new() { Rate = 5f, Depth = 0.08f };
     private readonly DelayEffect _delay = new() { DelayMilliseconds = 180f, Feedback = 0.25f, Wet = 0.15f };
     private readonly StereoWidenerEffect _widener = new() { Width = 0.35f };
-    private readonly SoftClipSaturator _saturator = new() { Drive = 1.18f };
+    private readonly SoftClipSaturator _saturator = new() { Drive = 1.80f };
     private readonly BitCrusherEffect _bitTexture = new() { Bits = 14, DownsampleFactor = 1f };
     private readonly LowPassOnePoleFilter _lowPassMaster = new() { Cutoff = 20000f };
     private readonly HighPassOnePoleFilter _highPassMaster = new() { Cutoff = 200f };
@@ -923,20 +923,8 @@ public sealed class TestMusicFilterSystem : ModSystem
         _bitTexture.DownsampleFactor = 12f;
 
 
-        processor.AddEffect(_motionBand);
-        processor.AddEffect(_tremolo);
-        processor.AddEffect(_delay);
-        processor.AddEffect(_widener);
-        processor.AddEffect(_masterBand);
-
-
         processor.AddEffect(_saturator);
 
-
-        processor.AddEffect(_lowPassMaster);
-        processor.AddEffect(_highPassMaster);
-        processor.AddEffect(_masterAmplifier);
-        processor.AddEffect(_reverseEffect);
 
 
         _exampleInstance = baseEffect.CreateProcessedInstance(processor, out _processedSamples);

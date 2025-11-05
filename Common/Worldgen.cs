@@ -29,16 +29,41 @@ public readonly struct SDFSample
 
 public static class SignedDistance
 {
-	public static SDFSample Circle(Vector2 p, float radius)
+	private const float RotationEpsilon = 1e-6f;
+
+	private static bool TryGetRotation(float radians, out float sin, out float cos)
 	{
+		if (Math.Abs(radians) <= RotationEpsilon)
+		{
+			sin = 0f;
+			cos = 1f;
+			return false;
+		}
+
+		sin = MathF.Sin(radians);
+		cos = MathF.Cos(radians);
+		return true;
+	}
+
+	private static Vector2 Rotate(Vector2 value, float sin, float cos) =>
+		new(cos * value.X - sin * value.Y, sin * value.X + cos * value.Y);
+
+	public static SDFSample Circle(Vector2 p, float radius, float rotationRadians = 0f)
+	{
+		if (TryGetRotation(rotationRadians, out float sin, out float cos))
+			p = Rotate(p, sin, cos);
+
 		float len = p.Length();
 		float dist = len - radius;
 		Vector2 grad = len > float.Epsilon ? p / len : Vector2.UnitY;
 		return new SDFSample(dist, grad);
 	}
 
-	public static SDFSample Box(Vector2 p, Vector2 halfExtents)
+	public static SDFSample Box(Vector2 p, Vector2 halfExtents, float rotationRadians = 0f)
 	{
+		if (TryGetRotation(rotationRadians, out float sin, out float cos))
+			p = Rotate(p, sin, cos);
+
 		Vector2 w = new(MathF.Abs(p.X), MathF.Abs(p.Y));
 		Vector2 q = w - halfExtents;
 		Vector2 max = Vector2.Max(q, Vector2.Zero);
@@ -65,8 +90,11 @@ public static class SignedDistance
 		return new SDFSample(dist, grad);
 	}
 
-	public static SDFSample RoundedBox(Vector2 p, Vector2 halfExtents, float round)
+	public static SDFSample RoundedBox(Vector2 p, Vector2 halfExtents, float round, float rotationRadians = 0f)
 	{
+		if (TryGetRotation(rotationRadians, out float sin, out float cos))
+			p = Rotate(p, sin, cos);
+
 		Vector2 w = new(MathF.Abs(p.X), MathF.Abs(p.Y));
 		Vector2 q = w - halfExtents + new Vector2(round);
 		Vector2 max = Vector2.Max(q, Vector2.Zero);
@@ -93,8 +121,15 @@ public static class SignedDistance
 		return new SDFSample(dist, grad);
 	}
 
-	public static SDFSample Segment(Vector2 p, Vector2 a, Vector2 b)
+	public static SDFSample Segment(Vector2 p, Vector2 a, Vector2 b, float rotationRadians = 0f)
 	{
+		if (TryGetRotation(rotationRadians, out float sin, out float cos))
+		{
+			p = Rotate(p, sin, cos);
+			a = Rotate(a, sin, cos);
+			b = Rotate(b, sin, cos);
+		}
+
 		Vector2 pa = p - a;
 		Vector2 ba = b - a;
 		float denom = Vector2.Dot(ba, ba);
@@ -107,8 +142,11 @@ public static class SignedDistance
 		return new SDFSample(dist, grad);
 	}
 
-	public static SDFSample Annulus(Vector2 p, float innerRadius, float outerRadius)
+	public static SDFSample Annulus(Vector2 p, float innerRadius, float outerRadius, float rotationRadians = 0f)
 	{
+		if (TryGetRotation(rotationRadians, out float sin, out float cos))
+			p = Rotate(p, sin, cos);
+
 		float len = p.Length();
 		float dist = MathF.Max(len - outerRadius, innerRadius - len);
 
@@ -125,16 +163,23 @@ public static class SignedDistance
 		return new SDFSample(dist, grad);
 	}
 
-	public static SDFSample Polygon(Vector2 p, ReadOnlySpan<Vector2> vertices)
+	public static SDFSample Polygon(Vector2 p, ReadOnlySpan<Vector2> vertices, float rotationRadians = 0f)
 	{
+		if (vertices.Length == 0)
+			return new SDFSample(float.PositiveInfinity, Vector2.UnitY);
+
+		bool rotated = TryGetRotation(rotationRadians, out float sin, out float cos);
+		if (rotated)
+			p = Rotate(p, sin, cos);
+
 		float minDist = float.MaxValue;
 		Vector2 closestVec = Vector2.UnitY;
+		bool inside = false;
 
 		for (int i = 0; i < vertices.Length; i++)
 		{
-			int j = (i + 1) % vertices.Length;
-			Vector2 vi = vertices[i];
-			Vector2 vj = vertices[j];
+			Vector2 vi = rotated ? Rotate(vertices[i], sin, cos) : vertices[i];
+			Vector2 vj = rotated ? Rotate(vertices[(i + 1) % vertices.Length], sin, cos) : vertices[(i + 1) % vertices.Length];
 
 			var seg = Segment(p, vi, vj);
 			if (seg.Distance < minDist)
@@ -142,15 +187,9 @@ public static class SignedDistance
 				minDist = seg.Distance;
 				closestVec = seg.Gradient;
 			}
-		}
 
-		bool inside = false;
-		for (int i = 0, j = vertices.Length - 1; i < vertices.Length; j = i++)
-		{
-			Vector2 vi = vertices[i];
-			Vector2 vj = vertices[j];
 			bool cond = ((vi.Y > p.Y) != (vj.Y > p.Y)) &&
-						(p.X < (vj.X - vi.X) * (p.Y - vi.Y) / (vj.Y - vi.Y + float.Epsilon) + vi.X);
+			            (p.X < (vj.X - vi.X) * (p.Y - vi.Y) / (vj.Y - vi.Y + float.Epsilon) + vi.X);
 			if (cond)
 				inside = !inside;
 		}

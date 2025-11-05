@@ -3,6 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Numerics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using ReLogic.Utilities;
@@ -71,6 +72,117 @@ public sealed class AudioDspProcessor
     }
 }
 
+static class PcmSimdHelper
+{
+	private const float ShortToFloat = 1f / 32768f;
+	private const float FloatToShort = 32767f;
+	private static readonly Vector<float> NegOne = new(-1f);
+	private static readonly Vector<float> PosOne = new(1f);
+	private static readonly Vector<float> PolyC1 = new(27f);
+	private static readonly Vector<float> PolyC2 = new(9f);
+
+	public static void ApplyGain(Span<float> samples, float gain)
+	{
+		if (samples.IsEmpty)
+			return;
+
+		int i = 0;
+		if (Vector.IsHardwareAccelerated)
+		{
+			int width = Vector<float>.Count;
+			var vGain = new Vector<float>(gain);
+			for (; i <= samples.Length - width; i += width)
+			{
+				var v = new Vector<float>(samples.Slice(i, width)) * vGain;
+				v = Vector.Min(Vector.Max(v, NegOne), PosOne);
+				v.CopyTo(samples.Slice(i, width));
+			}
+		}
+
+		for (; i < samples.Length; i++)
+		{
+			float scaled = samples[i] * gain;
+			samples[i] = MathHelper.Clamp(scaled, -1f, 1f);
+		}
+	}
+
+	public static void ApplySoftClip(Span<float> samples, float drive)
+	{
+		if (samples.IsEmpty || drive <= 0f)
+			return;
+
+		int i = 0;
+		if (Vector.IsHardwareAccelerated)
+		{
+			int width = Vector<float>.Count;
+			var vDrive = new Vector<float>(drive);
+			for (; i <= samples.Length - width; i += width)
+			{
+				var v = new Vector<float>(samples.Slice(i, width)) * vDrive;
+				var v2 = v * v;
+				var numerator = v * (PolyC1 + v2);
+				var denominator = PolyC1 + (PolyC2 * v2);
+				var soft = numerator / denominator;
+				soft = Vector.Min(Vector.Max(soft, NegOne), PosOne);
+				soft.CopyTo(samples.Slice(i, width));
+			}
+		}
+
+		for (; i < samples.Length; i++)
+		{
+			float x = samples[i] * drive;
+			float saturated = x * (27f + x * x) / (27f + 9f * x * x);
+			samples[i] = MathHelper.Clamp(saturated, -1f, 1f);
+		}
+	}
+
+	public static void ConvertS16ToF32(ReadOnlySpan<short> source, Span<float> destination)
+	{
+		int i = 0;
+		if (Vector.IsHardwareAccelerated)
+		{
+			int width = Vector<short>.Count;
+			var scale = new Vector<float>(ShortToFloat);
+			for (; i <= source.Length - width; i += width)
+			{
+				var s = new Vector<short>(source.Slice(i, width));
+				Vector.Widen(s, out Vector<int> lower, out Vector<int> upper);
+				(Vector.ConvertToSingle(lower) * scale).CopyTo(destination.Slice(i, Vector<int>.Count));
+				(Vector.ConvertToSingle(upper) * scale).CopyTo(destination.Slice(i + Vector<int>.Count, Vector<int>.Count));
+			}
+		}
+		for (; i < source.Length; i++)
+			destination[i] = MathHelper.Clamp(source[i] * ShortToFloat, -1f, 1f);
+	}
+
+	public static void ConvertF32ToS16(ReadOnlySpan<float> source, Span<short> destination)
+	{
+		int i = 0;
+		if (Vector.IsHardwareAccelerated)
+		{
+			int width = Vector<float>.Count;
+			var min = new Vector<float>(-1f);
+			var max = new Vector<float>(1f);
+			var scale = new Vector<float>(FloatToShort);
+			Span<int> temp = stackalloc int[Vector<int>.Count];
+			for (; i <= source.Length - width; i += width)
+			{
+				var v = new Vector<float>(source.Slice(i, width));
+				v = Vector.Min(Vector.Max(v, min), max) * scale;
+				Vector.ConvertToInt32(v).CopyTo(temp);
+				for (int j = 0; j < temp.Length; j++)
+					destination[i + j] = (short)Math.Clamp(temp[j], short.MinValue, short.MaxValue);
+			}
+		}
+		for (; i < source.Length; i++)
+		{
+			float clamped = MathHelper.Clamp(source[i], -1f, 1f);
+			destination[i] = (short)Math.Clamp((int)MathF.Round(clamped * FloatToShort), short.MinValue, short.MaxValue);
+		}
+	}
+}
+
+#region  Audio effects
 public abstract class OnePoleFilterBase : IAudioDspEffect
 {
     protected float SampleRate = 44100f;
@@ -371,8 +483,7 @@ public sealed class SoftClipSaturator : IAudioDspEffect
 
     public void Process(float[] samples, int channelCount)
     {
-        for (int i = 0; i < samples.Length; i++)
-            samples[i] = MathF.Tanh(samples[i] * _drive);
+        PcmSimdHelper.ApplySoftClip(samples.AsSpan(), _drive);
     }
 }
 
@@ -392,6 +503,26 @@ public sealed class StereoWidenerEffect : IAudioDspEffect
     {
         if (channelCount < 2)
             return;
+
+        if (channelCount == 2)
+        {
+            Span<float> span = samples;
+            int frameCount = span.Length / 2;
+            var stereo = MemoryMarshal.Cast<float, System.Numerics.Vector2>(span.Slice(0, frameCount * 2));
+            float widthScale = 0.5f * (1f + _width);
+
+            for (int i = 0; i < stereo.Length; i++)
+            {
+                System.Numerics.Vector2 lr = stereo[i];
+                float mid = (lr.X + lr.Y) * 0.5f;
+                float side = (lr.X - lr.Y) * widthScale;
+                stereo[i] = new System.Numerics.Vector2(
+                    MathHelper.Clamp(mid + side, -1f, 1f),
+                    MathHelper.Clamp(mid - side, -1f, 1f));
+            }
+
+            return;
+        }
 
         for (int i = 0; i < samples.Length; i += channelCount)
         {
@@ -532,7 +663,33 @@ public sealed class DelayEffect : IAudioDspEffect
     }
 }
 
-public static class FactDspContext
+public sealed class AmplifierEffect : IAudioDspEffect
+{
+	private float _gain = 1f;
+
+	public float Gain
+	{
+		get => _gain;
+		set => _gain = MathF.Max(0f, value);
+	}
+
+	public void Initialize(float sampleRate) { }
+
+	public void Process(float[] samples, int channelCount)
+	{
+		if (_gain <= 0f || samples.Length == 0)
+		{
+			if (_gain <= 0f)
+				Array.Clear(samples, 0, samples.Length);
+			return;
+		}
+
+		PcmSimdHelper.ApplyGain(samples.AsSpan(), _gain);
+	}
+}
+#endregion
+
+public static class TestDSP
 {
     public static readonly AudioDspProcessor Processor = new();
 }
@@ -563,8 +720,7 @@ public static class SoundEffectDspExtensions
             Marshal.Copy(source.handle.pAudioData, pcm, 0, sampleCount);
 
             processedSamples = new float[sampleCount];
-            for (int i = 0; i < sampleCount; i++)
-                processedSamples[i] = MathHelper.Clamp(pcm[i] / 32768f, -1f, 1f);
+            PcmSimdHelper.ConvertS16ToF32(new ReadOnlySpan<short>(pcm, 0, sampleCount), processedSamples.AsSpan());
 
             processor.SetSampleRate(sampleRate);
             processor.ProcessBuffer(processedSamples, channelCount);
@@ -594,8 +750,8 @@ public static class ExampleFactUsage
         try
         {
             span.CopyTo(managed);
-            FactDspContext.Processor.SetSampleRate(sampleRate);
-            FactDspContext.Processor.ProcessBuffer(managed, channelCount);
+            TestDSP.Processor.SetSampleRate(sampleRate);
+            TestDSP.Processor.ProcessBuffer(managed, channelCount);
             managed.AsSpan(0, span.Length).CopyTo(span);
         }
         finally
@@ -620,6 +776,7 @@ public sealed class TestMusicFilterSystem : ModSystem
     private readonly HighPassOnePoleFilter _highPassMaster = new() { Cutoff = 200f };
     private readonly BandPassBiquadFilter _masterBand = new() { Frequency = 1000f, Q = 1f };
 
+    private readonly AmplifierEffect _masterAmplifier = new() { Gain = 1.5f };
     private DynamicSoundEffectInstance? _exampleInstance;
     private float _timeAccumulator;
     private float _sampleRate = SampleRateDefault;
@@ -632,12 +789,11 @@ public sealed class TestMusicFilterSystem : ModSystem
 
     public override void OnModLoad()
     {
-
         var baseEffect = Assets.Audio.Misc.StupidGun_HeavyFire.Asset.GetSoundEffect();
         _sampleRate = baseEffect.sampleRate;
         _channelCount = baseEffect.channels == (ushort)AudioChannels.Stereo ? 2 : 1;
 
-        var processor = FactDspContext.Processor;
+        var processor = TestDSP.Processor;
         processor.ClearEffects();
         processor.SetSampleRate(_sampleRate);
 
@@ -669,7 +825,7 @@ public sealed class TestMusicFilterSystem : ModSystem
 
         processor.AddEffect(_lowPassMaster);
         processor.AddEffect(_highPassMaster);
-
+        processor.AddEffect(_masterAmplifier);
 
 
         _exampleInstance = baseEffect.CreateProcessedInstance(processor, out _processedSamples);
@@ -691,17 +847,17 @@ public sealed class TestMusicFilterSystem : ModSystem
 
         _lowPassMaster.Cutoff = 10000f;
         _highPassMaster.Cutoff = 500f + (Main.player[Main.myPlayer].velocity.Length() * 1000f);
+        _masterAmplifier.Gain = 7.2f;
         foreach (SlotVector<ActiveSound>.ItemPair item in (IEnumerable<SlotVector<ActiveSound>.ItemPair>)SoundEngine.SoundPlayer._trackedSounds)
         {
             ActiveSound value = item.Value;
             if (value.Sound == null || value.Sound.parentEffect == null)
                 continue;
-            value.Sound = value.Sound?.parentEffect.CreateProcessedInstance(FactDspContext.Processor, out _, true);
-
-
+            value.Sound = value.Sound?.parentEffect.CreateProcessedInstance(TestDSP.Processor, out _, true);
         }
     }
-
+    
+#region The Dredge
     public override void PreUpdateEntities()
     {
         return; // TODO: Live modify ASoundEffectBasedAudioTrack, see if you can modify CueAudioTrack maybe in the far future
@@ -767,8 +923,8 @@ public sealed class TestMusicFilterSystem : ModSystem
                                 if (channels <= 0)
                                     channels = 1;
 
-                                FactDspContext.Processor.SetSampleRate(Math.Max(_sampleRate, 1000f));
-                                FactDspContext.Processor.ProcessBuffer(floatSamples, channels);
+                                TestDSP.Processor.SetSampleRate(Math.Max(_sampleRate, 1000f));
+                                TestDSP.Processor.ProcessBuffer(floatSamples, channels);
 
                                 for (int i = 0; i < sampleCount; i++)
                                     if (i < shortSpan.Length)
@@ -1124,3 +1280,5 @@ unsafe struct FAudioBufferWMA
 	uint* pDecodedPacketCumulativeBytes;
 	uint PacketCount;
 }
+
+#endregion

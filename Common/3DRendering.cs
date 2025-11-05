@@ -2334,6 +2334,8 @@ public class TestPrimitiveRenderSystem : ModSystem
             polygon,
             blendState: BlendState.AlphaBlend);
 
+        Stopwatch watch;
+        watch = Stopwatch.StartNew();
         var particleMesh = Testicles!.BuildBillboards(depth: -40f, textured: true);
         if (particleMesh.IsValid)
         {
@@ -2342,6 +2344,9 @@ public class TestPrimitiveRenderSystem : ModSystem
                 particleMesh,
                 blendState: BlendState.Additive);
         }
+        watch.Stop();
+        Main.NewText($"Particle Primitive Build Time: {watch.Elapsed.TotalMilliseconds} ms");
+
 
         var ellipse = PrimitiveShapeBuilder.BuildEllipse(
             new Vector3(1200f, 420f, 0f),
@@ -2431,6 +2436,13 @@ public class TestPrimitiveRenderSystem : ModSystem
             Matrix.Identity, view, projection,
             rope,
             blendState: BlendState.AlphaBlend);
+        watch = Stopwatch.StartNew();
+        Main.spriteBatch.Begin(ss);
+        Testicles.DrawSprites(Main.spriteBatch, Vector2.Zero, 1f);
+        Main.spriteBatch.End();
+        watch.Stop();
+        Main.NewText($"Particle Sprite Render Time: {watch.Elapsed.TotalMilliseconds} ms");
+
         Main.spriteBatch.Begin(ss);
     }
 

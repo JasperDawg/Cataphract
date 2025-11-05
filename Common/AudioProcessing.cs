@@ -3,6 +3,8 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using System.Numerics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
@@ -178,6 +180,102 @@ static class PcmSimdHelper
 		{
 			float clamped = MathHelper.Clamp(source[i], -1f, 1f);
 			destination[i] = (short)Math.Clamp((int)MathF.Round(clamped * FloatToShort), short.MinValue, short.MaxValue);
+		}
+	}
+
+	public static void ReverseInPlace(Span<float> samples, int channelCount)
+	{
+		if (samples.IsEmpty || channelCount <= 0)
+			return;
+
+		if (channelCount == 1)
+		{
+			ReverseMono(samples);
+			return;
+		}
+
+		int frameCount = samples.Length / channelCount;
+		if (frameCount <= 1)
+			return;
+
+		int trimmed = frameCount * channelCount;
+		Span<float> span = samples.Slice(0, trimmed);
+
+		int head = 0;
+		int tail = frameCount - 1;
+		while (head < tail)
+		{
+			int headIndex = head * channelCount;
+			int tailIndex = tail * channelCount;
+			for (int c = 0; c < channelCount; c++)
+			{
+				float temp = span[headIndex + c];
+				span[headIndex + c] = span[tailIndex + c];
+				span[tailIndex + c] = temp;
+			}
+
+			head++;
+			tail--;
+		}
+	}
+
+	private static void ReverseMono(Span<float> samples)
+	{
+		if (samples.Length <= 1)
+			return;
+
+		if (Sse.IsSupported && samples.Length >= Vector128<float>.Count)
+		{
+			ReverseMonoSse(samples);
+			return;
+		}
+
+		ReverseScalar(samples);
+	}
+
+	private static unsafe void ReverseMonoSse(Span<float> samples)
+	{
+		int len = samples.Length;
+		int width = Vector128<float>.Count;
+
+		fixed (float* ptr = samples)
+		{
+			float* leftPtr = ptr;
+			float* rightPtr = ptr + len - width;
+
+			while (leftPtr + width <= rightPtr)
+			{
+				Vector128<float> leftVec = Sse.LoadVector128(leftPtr);
+				Vector128<float> rightVec = Sse.LoadVector128(rightPtr);
+
+				Vector128<float> leftRev = Sse.Shuffle(leftVec, leftVec, 0x1B);
+				Vector128<float> rightRev = Sse.Shuffle(rightVec, rightVec, 0x1B);
+
+				Sse.Store(leftPtr, rightRev);
+				Sse.Store(rightPtr, leftRev);
+
+				leftPtr += width;
+				rightPtr -= width;
+			}
+
+			int processed = (int)(leftPtr - ptr);
+			int remainingLength = len - (processed * 2);
+			if (remainingLength > 1)
+				ReverseScalar(samples.Slice(processed, remainingLength));
+		}
+	}
+
+	private static void ReverseScalar(Span<float> samples)
+	{
+		int i = 0;
+		int j = samples.Length - 1;
+		while (i < j)
+		{
+			float tmp = samples[i];
+			samples[i] = samples[j];
+			samples[j] = tmp;
+			i++;
+			j--;
 		}
 	}
 }
@@ -687,6 +785,17 @@ public sealed class AmplifierEffect : IAudioDspEffect
 		PcmSimdHelper.ApplyGain(samples.AsSpan(), _gain);
 	}
 }
+
+public sealed class ReverseAudioEffect : IAudioDspEffect
+{
+	public void Initialize(float sampleRate) { }
+
+	public void Process(float[] samples, int channelCount)
+	{
+		PcmSimdHelper.ReverseInPlace(samples.AsSpan(), channelCount);
+	}
+}
+
 #endregion
 
 public static class TestDSP
@@ -775,8 +884,9 @@ public sealed class TestMusicFilterSystem : ModSystem
     private readonly LowPassOnePoleFilter _lowPassMaster = new() { Cutoff = 20000f };
     private readonly HighPassOnePoleFilter _highPassMaster = new() { Cutoff = 200f };
     private readonly BandPassBiquadFilter _masterBand = new() { Frequency = 1000f, Q = 1f };
-
     private readonly AmplifierEffect _masterAmplifier = new() { Gain = 1.5f };
+    private readonly ReverseAudioEffect _reverseEffect = new();
+
     private DynamicSoundEffectInstance? _exampleInstance;
     private float _timeAccumulator;
     private float _sampleRate = SampleRateDefault;
@@ -826,6 +936,7 @@ public sealed class TestMusicFilterSystem : ModSystem
         processor.AddEffect(_lowPassMaster);
         processor.AddEffect(_highPassMaster);
         processor.AddEffect(_masterAmplifier);
+        processor.AddEffect(_reverseEffect);
 
 
         _exampleInstance = baseEffect.CreateProcessedInstance(processor, out _processedSamples);

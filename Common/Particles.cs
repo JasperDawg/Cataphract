@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
@@ -372,28 +375,32 @@ public sealed class ParticleWorld
 			return;
 
 		Vector2 accelerationDt = globalAcceleration * deltaSeconds;
+		var removalBag = new ConcurrentQueue<int>();
+		var lightBag = lightSink != null ? new ConcurrentQueue<(Vector2 position, Vector3 color)>() : null;
+		int removedTotal = 0;
 
-		for (int i = 0; i < _capacity; i++)
+		Parallel.For(0, _capacity, () => 0, (i, _, localRemoved) =>
 		{
 			if (!_alive[i])
-				continue;
+				return localRemoved;
+
 			var signature = _archetypes[i];
 			if (signature == ParticleComponentMask.None)
-				continue;
+				return localRemoved;
 
+			bool remove = false;
 			if (signature.HasFlag(ParticleComponentMask.Lifetime))
 			{
-				_ages[i] += deltaSeconds;
-				if (_ages[i] >= _lifetimes[i])
-				{
-					_alive[i] = false;
-					_archetypes[i] = ParticleComponentMask.None;
-					ResetDynamicComponents(i);
-					_componentMasks[i].Clear();
-					_pendingRemoval.Enqueue(i);
-					Count = Math.Max(0, Count - 1);
-					continue;
-				}
+				float age = _ages[i] + deltaSeconds;
+				_ages[i] = age;
+				if (age >= _lifetimes[i])
+					remove = true;
+			}
+
+			if (remove)
+			{
+				removalBag.Enqueue((int)i);
+				return localRemoved + 1;
 			}
 
 			if (signature.HasFlag(ParticleComponentMask.Acceleration))
@@ -406,10 +413,32 @@ public sealed class ParticleWorld
 				_rotations[i] += _angularVelocities[i] * deltaSeconds;
 
 			if (signature.HasFlag(ParticleComponentMask.FrameAnimation))
-				UpdateAnimation(i, deltaSeconds);
+				UpdateAnimation((int)i, deltaSeconds);
 
-			if (lightSink != null && signature.HasFlag(ParticleComponentMask.Light))
-				lightSink(_positions[i], _lights[i]);
+			if (lightBag != null && signature.HasFlag(ParticleComponentMask.Light))
+				lightBag.Enqueue((_positions[i], _lights[i]));
+
+			return localRemoved;
+		}, localRemoved => Interlocked.Add(ref removedTotal, localRemoved));
+
+		if (removedTotal > 0)
+		{
+			while (removalBag.TryDequeue(out int id))
+			{
+				_alive[id] = false;
+				_archetypes[id] = ParticleComponentMask.None;
+				ResetDynamicComponents(id);
+				_componentMasks[id].Clear();
+				_pendingRemoval.Enqueue(id);
+			}
+
+			Count = Math.Max(0, Count - removedTotal);
+		}
+
+		if (lightBag != null)
+		{
+			while (lightBag.TryDequeue(out var light))
+				lightSink!(light.position, light.color);
 		}
 
 		ClearDeferred();

@@ -294,6 +294,12 @@ public static class OutlineRenderer
 }
 
 static class SizeMatrices {
-    private static readonly Matrix Half = Matrix.CreateScale(0.5f, 0.5f, 0.5f);
-    private static readonly Matrix Double = Matrix.CreateScale(2f, 2f, 2f);
+    public static readonly Matrix Half = Matrix.CreateScale(0.5f, 0.5f, 0.5f);
+    public static readonly Matrix Double = Matrix.CreateScale(2f, 2f, 2f);
+
+    public static Vector2 Scale(this Vector2 vector, Matrix matrix) =>
+        new(
+            matrix.M11 * vector.X,
+            matrix.M22 * vector.Y
+        );
 }

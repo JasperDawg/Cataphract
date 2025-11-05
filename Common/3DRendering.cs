@@ -345,8 +345,7 @@ public readonly struct PrimitiveMesh
             throw new ArgumentOutOfRangeException(nameof(vertices), "Vertex count exceeds index buffer range.");
 
         var indices = new short[vertices.Length];
-        for (short i = 0; i < indices.Length; i++)
-            indices[i] = i;
+        PrimitiveSimd.FillSequentialIndices(indices.AsSpan());
 
         return new PrimitiveMesh(vertices, indices, primitiveType);
     }
@@ -361,8 +360,7 @@ public readonly struct PrimitiveMesh
             throw new ArgumentOutOfRangeException(nameof(vertices), "Vertex count exceeds index buffer range.");
 
         var indices = new short[vertices.Length];
-        for (short i = 0; i < indices.Length; i++)
-            indices[i] = i;
+        PrimitiveSimd.FillSequentialIndices(indices.AsSpan());
 
         return new PrimitiveMesh(vertices, indices, primitiveType);
     }
@@ -1269,15 +1267,14 @@ public static class TriangleStripBuilder
         if (!needCaps)
         {
             var stripIndices = new short[textured ? texturedVertices!.Length : colorVertices!.Length];
-            for (short i = 0; i < stripIndices.Length; i++)
-                stripIndices[i] = i;
+            PrimitiveSimd.FillSequentialIndices(stripIndices.AsSpan());
 
             return textured
                 ? new PrimitiveMesh(texturedVertices!, stripIndices, PrimitiveType.TriangleStrip)
                 : new PrimitiveMesh(colorVertices!, stripIndices, PrimitiveType.TriangleStrip);
         }
 
-        if (textured)
+        if (textured)   
         {
             var vertexList = new List<VertexPositionColorTexture>(texturedVertices!);
             var indexList = new List<short>();
@@ -1734,6 +1731,43 @@ public static class TriangleStripBuilder
     }
 }
 
+internal static class PrimitiveSimd
+{
+	private static readonly System.Numerics.Vector<int> LaneOffsets = CreateLaneOffsets();
+
+	public static void FillSequentialIndices(Span<short> indices)
+	{
+		int i = 0;
+		if (System.Numerics.Vector.IsHardwareAccelerated)
+		{
+			int width = System.Numerics.Vector<int>.Count;
+			Span<int> temp = width <= 16
+				? stackalloc int[width]
+				: new int[width];
+
+			while (i <= indices.Length - width)
+			{
+				(LaneOffsets + new System.Numerics.Vector<int>(i)).CopyTo(temp);
+				for (int lane = 0; lane < width; lane++)
+					indices[i + lane] = (short)temp[lane];
+				i += width;
+			}
+		}
+
+		for (; i < indices.Length; i++)
+			indices[i] = (short)i;
+	}
+
+	private static System.Numerics.Vector<int> CreateLaneOffsets()
+	{
+		int width = System.Numerics.Vector<int>.Count;
+		Span<int> lanes = stackalloc int[width];
+		for (int i = 0; i < width; i++)
+			lanes[i] = i;
+		return new System.Numerics.Vector<int>(lanes);
+	}
+}
+
 public static class PrimitiveShapeBuilder
 {
     public static PrimitiveMesh BuildRectangularQuad(
@@ -1923,7 +1957,7 @@ public static class PrimitiveShapeBuilder
             for (int i = 0; i < segments; i++)
             {
                 var offset = EllipseDirection(i, segments, right, up, radii);
-                               var point = center + offset;
+                var point = center + offset;
 
                 float u = 0.5f + 0.5f * MathHelper.Clamp(Vector3.Dot(offset, right) / safeX, -1f, 1f);
                 float v = 0.5f - 0.5f * MathHelper.Clamp(Vector3.Dot(offset, up) / safeY, -1f, 1f);
@@ -2436,13 +2470,6 @@ public class TestPrimitiveRenderSystem : ModSystem
             Matrix.Identity, view, projection,
             rope,
             blendState: BlendState.AlphaBlend);
-        watch = Stopwatch.StartNew();
-        Main.spriteBatch.Begin(ss);
-        Testicles.DrawSprites(Main.spriteBatch, Vector2.Zero, 1f);
-        Main.spriteBatch.End();
-        watch.Stop();
-        Main.NewText($"Particle Sprite Render Time: {watch.Elapsed.TotalMilliseconds} ms");
-
         Main.spriteBatch.Begin(ss);
     }
 

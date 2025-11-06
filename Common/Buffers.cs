@@ -265,6 +265,15 @@ public static class SizeMatrices {
             Vector2.Transform(vector, matrix);  
 }
 
+public readonly record struct EffectChainEntry(
+	Effect Effect,
+	BlendState? Blend = null,
+	SamplerState? Sampler = null,
+	DepthStencilState? Depth = null,
+	RasterizerState? Rasterizer = null,
+	SpriteSortMode SortMode = SpriteSortMode.Immediate,
+	Matrix? Transform = null);
+
 public static class SpritebatchExtensions {
 	public static RenderTargetPool.RenderTargetLease DrawHalfScaledToTarget(
 		this SpriteBatch spriteBatch,
@@ -322,5 +331,87 @@ public static class SpritebatchExtensions {
 		}
 
 		return lease;
+	}
+
+	public static RenderTargetPool.RenderTargetLease DrawWithEffects(
+		this SpriteBatch spriteBatch,
+		GraphicsDevice device,
+		RenderTargetPool pool,
+		Point targetSize,
+		Action<SpriteBatch> drawAction,
+		IReadOnlyList<EffectChainEntry>? effectChain = null,
+		bool clear = true,
+		Color? clearColor = null,
+		RenderTargetDescriptor? descriptor = null,
+		Matrix? transform = null,
+		SpriteSortMode sortMode = SpriteSortMode.Deferred,
+		BlendState? blendState = null,
+		SamplerState? samplerState = null,
+		DepthStencilState? depthStencilState = null,
+		RasterizerState? rasterizerState = null)
+	{
+		if (spriteBatch == null)
+			throw new ArgumentNullException(nameof(spriteBatch));
+		if (device == null)
+			throw new ArgumentNullException(nameof(device));
+		if (pool == null)
+			throw new ArgumentNullException(nameof(pool));
+		if (drawAction == null)
+			throw new ArgumentNullException(nameof(drawAction));
+
+		var renderDesc = descriptor ?? RenderTargetDescriptor.Default;
+		int width = Math.Max(1, targetSize.X);
+		int height = Math.Max(1, targetSize.Y);
+
+		var currentLease = pool.Rent(device, width, height, renderDesc);
+
+		using (var scope = new RenderTargetScope(device, currentLease.Target, clear, clearColor))
+		{
+			spriteBatch.Begin(
+				sortMode,
+				blendState ?? BlendState.AlphaBlend,
+				samplerState ?? SamplerState.LinearClamp,
+				depthStencilState ?? DepthStencilState.None,
+				rasterizerState ?? RasterizerState.CullCounterClockwise,
+				effect: null,
+				transform ?? Matrix.Identity);
+			try
+			{
+				drawAction(spriteBatch);
+			}
+			finally
+			{
+				spriteBatch.End();
+			}
+		}
+
+		if (effectChain is { Count: > 0 })
+		{
+			foreach (var entry in effectChain)
+			{
+				if (entry.Effect == null)
+					continue;
+
+				var nextLease = pool.Rent(device, width, height, renderDesc);
+				using (var scope = new RenderTargetScope(device, nextLease.Target, true, Color.Transparent))
+				{
+					spriteBatch.Begin(
+						entry.SortMode,
+						entry.Blend ?? blendState ?? BlendState.AlphaBlend,
+						entry.Sampler ?? samplerState ?? SamplerState.LinearClamp,
+						entry.Depth ?? depthStencilState ?? DepthStencilState.None,
+						entry.Rasterizer ?? rasterizerState ?? RasterizerState.CullCounterClockwise,
+						entry.Effect,
+						entry.Transform ?? Matrix.Identity);
+					spriteBatch.Draw(currentLease.Target, Vector2.Zero, Color.White);
+					spriteBatch.End();
+				}
+
+				currentLease.Dispose();
+				currentLease = nextLease;
+			}
+		}
+
+		return currentLease;
 	}
 }

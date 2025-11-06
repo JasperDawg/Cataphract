@@ -66,7 +66,7 @@ public class MagicScientist : ModNPC
         if (_data.bossTimer++ == 0)
         {
             _data.ModNPC = this;
-            StateController.PushState(new InitTransitionState());
+            StateController.PushState<InitTransitionState>(new InitTransitionState() { stateID = new StateID("InitTransitionState", 0) }); // todo: change this immediately
         }
 
         if (!StateController.Update(_data))

@@ -15,7 +15,7 @@ public static class SdfWorldgenUtils
 		int BoundarySampleStride = 1,
 		int MaxDegreeOfParallelism = 0,
 		CancellationToken Cancellation = default);
-        // todo: parallel worldgen
+	// todo: parallel worldgen
 }
 
 public readonly struct SDFSample
@@ -192,7 +192,7 @@ public static class SignedDistance
 			}
 
 			bool cond = ((vi.Y > p.Y) != (vj.Y > p.Y)) &&
-			            (p.X < (vj.X - vi.X) * (p.Y - vi.Y) / (vj.Y - vi.Y + float.Epsilon) + vi.X);
+						(p.X < (vj.X - vi.X) * (p.Y - vi.Y) / (vj.Y - vi.Y + float.Epsilon) + vi.X);
 			if (cond)
 				inside = !inside;
 		}
@@ -231,7 +231,7 @@ public static class SdfOperators
 		Vector2 blended = grad1 + grad2;
 		return new SDFSample(min1, blended);
 	}
-	
+
 	public static SDFSample Union(SDFSample a, SDFSample b)
 	{
 		if (a.Distance < b.Distance)
@@ -281,15 +281,15 @@ public static class SDFTests
 	{
 		var field = new bool[width, height];
 		for (int y = 0; y < height; y++)
-		for (int x = 0; x < width; x++)
-		{
-			var p = new Vector2(x, y) - center;
-			var a = SignedDistance.Circle(p, radius);
-			var b = SignedDistance.Annulus(p, radius - 5f, radius - 2f);
-            var final = SdfOperators.Xor(a, b);
+			for (int x = 0; x < width; x++)
+			{
+				var p = new Vector2(x, y) - center;
+				var a = SignedDistance.Circle(p, radius);
+				var b = SignedDistance.Annulus(p, radius - 5f, radius - 2f);
+				var final = SdfOperators.Xor(a, b);
 
-            field[x, y] = final.Distance <= 0f;
-		}
+				field[x, y] = final.Distance <= 0f;
+			}
 		return field;
 	}
 }
@@ -319,11 +319,37 @@ public static class WorldgenNoise
 		uint h = Hash((uint)(x) * 0x45d9f3u ^ (uint)(y) * 0x27d4eb2du ^ (uint)seed * 0x165667b1u);
 		return h;
 	}
-	
+
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private static float HashFloat(int x, int y, int seed)
 	{
-		return (Hash(x, y, seed) & 0xffffffu) / 0xffffffu;
+		return (Hash(x, y, seed) & 0xffffffu) / 16777215f;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static float Fade(float t) => t * t * t * (t * (t * 6f - 15f) + 10f);
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static float Lerp(float a, float b, float t) => a + (b - a) * t;
+
+	public static float FastValue(Vector2 p, int seed = 0)
+	{
+		int ix = (int)MathF.Floor(p.X);
+		int iy = (int)MathF.Floor(p.Y);
+
+		float fx = ix;
+		float fy = iy;
+
+		float v00 = HashFloat(ix, iy, seed);
+		float v10 = HashFloat(ix + 1, iy, seed);
+		float v01 = HashFloat(ix, iy + 1, seed);
+		float v11 = HashFloat(ix + 1, iy + 1, seed);
+
+		float u = Fade(fx);
+		float v = Fade(fy);
+
+		float x0 = Lerp(v00, v10, u);
+		float x1 = Lerp(v01, v11, u);
+		return Lerp(x0, x1, v);
 	}
 
 	public static float FastSimplex(Vector2 p, int seed = 0)
@@ -383,6 +409,8 @@ public static class WorldgenNoise
 		return MathHelper.Clamp(value * 0.5f + 0.5f, 0f, 1f);
 	}
 
+
+
 	// partially based on https://lygia.xyz/generative/worley
 	public static float FastCellular(Vector2 p, int seed = 0, float jitter = 0.9f)
 	{
@@ -415,29 +443,95 @@ public static class WorldgenNoise
 
 		return MathHelper.Clamp(MathF.Sqrt(minDist) * 1.4142f, 0f, 1f);
 	}
+
+	public static float SimplexFbm(Vector2 p, int seed = 0, int octaves = 4, float lacunarity = 2f, float gain = 0.5f, float scale = 1f)
+	{
+		float amplitude = 1f;
+		float frequency = 1f;
+		float sum = 0f;
+		float norm = 0f;
+
+		for (int i = 0; i < octaves; i++)
+		{
+			sum += FastSimplex(p * frequency * scale, seed + i * 53) * amplitude;
+			norm += amplitude;
+			amplitude *= gain;
+			frequency *= lacunarity;
+		}
+
+		return norm > 0f ? sum / norm : 0.5f;
+	}
+
+	public static float DomainWarp(Vector2 p, int seed = 0, float amplitude = 1.5f, int iterations = 2, Func<Vector2, int, float>? noise = null)
+	{
+		noise ??= FastSimplex;
+		Vector2 warp = Vector2.Zero;
+		float amp = amplitude;
+		float freq = 1f;
+
+		for (int i = 0; i < iterations; i++)
+		{
+			float nx = noise(p * freq + warp, seed + i * 37);
+			float ny = noise(p * freq + warp + new Vector2(37.2f, 17.9f), seed + i * 37 + 1);
+			warp += new Vector2(nx, ny) * amp;
+			freq *= 2f;
+			amp *= 0.5f;
+		}
+
+		return noise(p + warp, seed + iterations * 97);
+	}
 }
 
 public class TestingModSystem : ModSystem
 {
-    public override void PostWorldGen()
-    {
-		for (int i = 0; i < Main.maxTilesX; i++) {
-			for (int j = 0; j < Main.maxTilesY; j++) {
+	public override void PostWorldGen()
+	{
+		for (int i = 0; i < Main.maxTilesX; i++)
+		{
+			for (int j = 0; j < Main.maxTilesY; j++)
+			{
 				Tile tile = Main.tile[i, j];
-				if (tile != null && tile.active()) {
-					float noiseValue = WorldgenNoise.FastSimplex(new Vector2(WorldgenNoise.FastCellular(new Vector2(i, j), seed: 12345), WorldgenNoise.FastCellular(new Vector2(i, j), seed: 12345)));
-					if (noiseValue > 0.5f) {
+				if (tile != null && tile.active())
+				{
+					float noiseValue = WorldgenNoise.SimplexFbm(new Vector2(i, j), seed: 12345, octaves: 24, lacunarity: 2f, gain: 0.5f, scale: 0.005f);
+
+					if (noiseValue > 0.75f)
+					{
+						tile.type = Terraria.ID.TileID.Gold;
+					}
+					else if (noiseValue > 0.5f)
+					{
 						tile.type = Terraria.ID.TileID.Demonite;
 					}
+					else if (noiseValue > 0.25f)
+					{
+						tile.type = Terraria.ID.TileID.Stone;
+					}
+					else
+					{
+						tile.type = Terraria.ID.TileID.Dirt;
+					}
 
+
+					continue;
 					SDFSample sdfSample = SignedDistance.Circle(new Vector2(i - Main.maxTilesX / 2, j - Main.maxTilesY / 2), 100f);
 					sdfSample = SdfOperators.SmoothMin(sdfSample, SignedDistance.RoundedBox(new Vector2(i - 130 - Main.maxTilesX / 2, j - Main.maxTilesY / 2), new Vector2(50f, 75f), 20f, rotationRadians: MathHelper.PiOver4), 10f);
-					if (sdfSample.Distance < 0f) {
+					if (sdfSample.Distance < 0f)
+					{
 						tile.type = Terraria.ID.TileID.Gold;
+
+						Vector2 gradient = sdfSample.Gradient;
+						float angle = MathF.Atan2(gradient.Y, gradient.X);
+						if (angle < 0f)
+							angle += MathHelper.TwoPi;
+
+						int paintIndex = 1 + (int)MathF.Round(angle / MathHelper.TwoPi * 29f);
+						paintIndex = (int)MathHelper.Clamp(paintIndex, 1f, 29f);
+						tile.color((byte)paintIndex);
 					}
 				}
 			}
 		}
-        base.PostWorldGen();
-    }
-}	
+		base.PostWorldGen();
+	}
+}

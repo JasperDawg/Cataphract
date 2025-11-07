@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Cataphractal.Common;
 using Microsoft.Xna.Framework;
 using Terraria;
@@ -462,6 +463,204 @@ public static class WorldgenNoise
 		return norm > 0f ? sum / norm : 0.5f;
 	}
 
+	public static float FastValueFbm(Vector2 p, int seed = 0, int octaves = 5, float lacunarity = 2f, float gain = 0.5f, float scale = 1f)
+	{
+		float amplitude = 1f;
+		float frequency = 1f;
+		float sum = 0f;
+		float norm = 0f;
+
+		for (int i = 0; i < octaves; i++)
+		{
+			sum += FastValue(p * frequency * scale, seed + i * 19) * amplitude;
+			norm += amplitude;
+			amplitude *= gain;
+			frequency *= lacunarity;
+		}
+
+		return norm > 0f ? sum / norm : 0.5f;
+	}
+
+	public static float SimplexBillow(Vector2 p, int seed = 0, int octaves = 4, float lacunarity = 2f, float gain = 0.5f, float scale = 1f)
+	{
+		float amplitude = 1f;
+		float frequency = 1f;
+		float sum = 0f;
+		float norm = 0f;
+
+		for (int i = 0; i < octaves; i++)
+		{
+			float sample = FastSimplex(p * frequency * scale, seed + i * 73);
+			sample = 2f * MathF.Abs(sample - 0.5f);
+			sum += sample * amplitude;
+			norm += amplitude;
+			amplitude *= gain;
+			frequency *= lacunarity;
+		}
+
+		return norm > 0f ? MathHelper.Clamp(sum / norm, 0f, 1f) : 0.5f;
+	}
+
+	public static float SimplexTurbulence(Vector2 p, int seed = 0, int octaves = 5, float lacunarity = 2f, float gain = 0.5f, float scale = 1f)
+	{
+		float amplitude = 1f;
+		float frequency = 1f;
+		float sum = 0f;
+		float norm = 0f;
+
+		for (int i = 0; i < octaves; i++)
+		{
+			float sample = FastSimplex(p * frequency * scale, seed + i * 97);
+			sum += MathF.Abs(sample - 0.5f) * 2f * amplitude;
+			norm += amplitude;
+			amplitude *= gain;
+			frequency *= lacunarity;
+		}
+
+		return norm > 0f ? MathHelper.Clamp(sum / norm, 0f, 1f) : 0.5f;
+	}
+
+	public static float HybridMultifractal(Vector2 p, int seed = 0, int octaves = 5, float lacunarity = 2f, float gain = 0.5f, float offset = 0.7f, float scale = 1f)
+	{
+		float frequency = 1f;
+		float weight = 1f;
+		float value = FastSimplex(p * frequency * scale, seed) + offset;
+		float amplitude = 1f;
+
+		for (int i = 1; i < octaves; i++)
+		{
+			if (weight <= 0f)
+				break;
+
+			frequency *= lacunarity;
+			amplitude *= gain;
+
+			float signal = FastSimplex(p * frequency * scale, seed + i * 131) + offset;
+			signal *= amplitude;
+			value += weight * signal;
+			weight *= signal;
+		}
+
+		return MathHelper.Clamp(value * 0.5f, 0f, 1f);
+	}
+
+	public static float CellularFbm(Vector2 p, int seed = 0, int octaves = 4, float lacunarity = 2f, float gain = 0.5f, float jitter = 0.9f, float scale = 1f)
+	{
+		float amplitude = 1f;
+		float frequency = 1f;
+		float sum = 0f;
+		float norm = 0f;
+
+		for (int i = 0; i < octaves; i++)
+		{
+			sum += FastCellular(p * frequency * scale, seed + i * 211, jitter) * amplitude;
+			norm += amplitude;
+			amplitude *= gain;
+			frequency *= lacunarity;
+		}
+
+		return norm > 0f ? sum / norm : 0.5f;
+	}
+
+	public static Vector2 DomainWarpVector(Vector2 p, int seed = 0, float amplitude = 1.5f, int iterations = 2, Func<Vector2, int, float>? noise = null)
+	{
+		noise ??= FastSimplex;
+		Vector2 warp = Vector2.Zero;
+		float amp = amplitude;
+		float freq = 1f;
+
+		for (int i = 0; i < iterations; i++)
+		{
+			float nx = noise(p * freq + warp, seed + i * 61);
+			float ny = noise(p * freq + warp + new Vector2(17.3f, 43.7f), seed + i * 61 + 1);
+			warp += new Vector2(nx, ny) * amp;
+			freq *= 2f;
+			amp *= 0.5f;
+		}
+
+		return warp;
+	}
+
+	public static Vector2 CurlSimplex(Vector2 p, int seed = 0, float epsilon = 0.5f)
+	{
+		Vector2 dx = new(epsilon, 0f);
+		Vector2 dy = new(0f, epsilon);
+
+		float n1 = FastSimplex(p + dy, seed);
+		float n2 = FastSimplex(p - dy, seed);
+		float n3 = FastSimplex(p + dx, seed + 17);
+		float n4 = FastSimplex(p - dx, seed + 17);
+
+		float dnx = (n1 - n2) / (2f * epsilon);
+		float dny = (n3 - n4) / (2f * epsilon);
+		return new Vector2(dnx, -dny);
+	}
+
+	public static float Blend(float a, float b, float mask, float feather = 0.1f)
+	{
+		float t = MathHelper.Clamp((mask - feather * 0.5f) / Math.Max(1e-6f, feather), 0f, 1f);
+		return MathHelper.Lerp(a, b, t);
+	}
+
+	public static void FillNoiseMap(Rectangle area, Span<float> destination, Func<Vector2, float> sampler, bool parallel = true)
+	{
+		if (sampler == null)
+			throw new ArgumentNullException(nameof(sampler));
+		if (destination.Length < area.Width * area.Height)
+			throw new ArgumentException("Destination span is too small.", nameof(destination));
+
+		int width = area.Width;
+
+		if (parallel && area.Height > 8)
+		{
+			var temp = new float[destination.Length];
+			Parallel.For(area.Top, area.Bottom, y =>
+			{
+				int rowIndex = (y - area.Top) * width;
+				for (int x = area.Left; x < area.Right; x++)
+					temp[rowIndex + (x - area.Left)] = sampler(new Vector2(x, y));
+			});
+			temp.AsSpan().CopyTo(destination);
+			return;
+		}
+
+		for (int y = area.Top; y < area.Bottom; y++)
+		{
+			int rowIndex = (y - area.Top) * width;
+			for (int x = area.Left; x < area.Right; x++)
+				destination[rowIndex + (x - area.Left)] = sampler(new Vector2(x, y));
+		}
+	}
+
+	public static void Normalize(Span<float> buffer)
+	{
+		if (buffer.IsEmpty)
+			return;
+
+		float min = float.MaxValue;
+		float max = float.MinValue;
+
+		for (int i = 0; i < buffer.Length; i++)
+		{
+			float v = buffer[i];
+			if (v < min) min = v;
+			if (v > max) max = v;
+		}
+
+		float range = Math.Max(1e-6f, max - min);
+		for (int i = 0; i < buffer.Length; i++)
+			buffer[i] = MathHelper.Clamp((buffer[i] - min) / range, 0f, 1f);
+	}
+
+	public static void ApplyCurve(Span<float> buffer, Func<float, float> curve)
+	{
+		if (curve == null)
+			throw new ArgumentNullException(nameof(curve));
+
+		for (int i = 0; i < buffer.Length; i++)
+			buffer[i] = MathHelper.Clamp(curve(buffer[i]), 0f, 1f);
+	}
+
 	public static float DomainWarp(Vector2 p, int seed = 0, float amplitude = 1.5f, int iterations = 2, Func<Vector2, int, float>? noise = null)
 	{
 		noise ??= FastSimplex;
@@ -480,58 +679,198 @@ public static class WorldgenNoise
 
 		return noise(p + warp, seed + iterations * 97);
 	}
+
+	public static float LightningStrike(Vector2 p, int seed = 0, float scale = 0.008f, float thickness = 1.5f, int octaves = 5)
+	{
+		Vector2 uv = p * scale;
+		int baseX = (int)MathF.Floor(uv.X);
+		int baseY = (int)MathF.Floor(uv.Y);
+
+		float thicknessScale = Math.Max(0.35f, thickness);
+		float best = 0f;
+
+		for (int oy = -1; oy <= 1; oy++)
+		{
+			for (int ox = -1; ox <= 1; ox++)
+			{
+				int cx = baseX + ox;
+				int cy = baseY + oy;
+
+				float cellMask = HashFloat(cx, cy, seed + 401);
+				if (cellMask < 0.15f)
+					continue;
+
+				Vector2 cellOrigin = new Vector2(cx, cy);
+				Vector2 local = uv - cellOrigin - new Vector2(0.5f);
+
+				float angle = HashFloat(cx, cy, seed + 61) * MathHelper.TwoPi;
+				float sin = MathF.Sin(angle);
+				float cos = MathF.Cos(angle);
+
+				float main = local.X * cos + local.Y * sin;
+				float lateral = -local.X * sin + local.Y * cos;
+
+				float bend = SimplexFbm((uv + cellOrigin) * 1.6f, seed + 73, octaves, 1.95f, 0.58f, 1f) * 2f - 1f;
+				float turbulence = SimplexTurbulence((uv + cellOrigin) * 2.8f, seed + 127, Math.Min(5, octaves + 1), 2.1f, 0.55f, 1f) * 0.6f - 0.3f;
+				float displaced = lateral + bend * (0.7f + 0.9f * MathF.Abs(main)) + turbulence;
+
+				float spine = MathF.Exp(-MathF.Abs(displaced) * (5.2f / thicknessScale));
+				float branch = MathF.Exp(-MathF.Abs(displaced - bend * 1.4f) * (3.2f / thicknessScale)) * MathF.Exp(-MathF.Abs(main) * 1.25f);
+
+				float fork = MathF.Exp(-MathF.Abs(main) * 0.85f);
+				float flicker = 0.72f + 0.28f * FastSimplex((uv + cellOrigin) * 4.3f, seed + 211);
+
+				float intensity = (spine * 0.78f + branch * 0.52f) * fork * flicker;
+				float density = 1f - MathF.Abs(cellMask - 0.5f) * 1.6f;
+
+				best = MathF.Max(best, intensity * density);
+			}
+		}
+
+		return MathHelper.Clamp(best, 0f, 1f);
+	}
 }
 
 public class TestingModSystem : ModSystem
 {
 	public override void PostWorldGen()
 	{
-		for (int i = 0; i < Main.maxTilesX; i++)
+		int width = Main.maxTilesX;
+		int height = Main.maxTilesY;
+
+		int bands = 11;
+		int bandWidth = Math.Max(1, width / bands);
+
+		for (int x = 0; x < width; x++)
 		{
-			for (int j = 0; j < Main.maxTilesY; j++)
+			int band = Math.Min(bands - 1, x / bandWidth);
+
+			for (int y = 0; y < height; y++)
 			{
-				Tile tile = Main.tile[i, j];
-				if (tile != null && tile.active())
-				{
-					float noiseValue = WorldgenNoise.SimplexFbm(new Vector2(i, j), seed: 12345, octaves: 24, lacunarity: 2f, gain: 0.5f, scale: 0.005f);
-
-					if (noiseValue > 0.75f)
-					{
-						tile.type = Terraria.ID.TileID.Gold;
-					}
-					else if (noiseValue > 0.5f)
-					{
-						tile.type = Terraria.ID.TileID.Demonite;
-					}
-					else if (noiseValue > 0.25f)
-					{
-						tile.type = Terraria.ID.TileID.Stone;
-					}
-					else
-					{
-						tile.type = Terraria.ID.TileID.Dirt;
-					}
-
-
+				Tile tile = Main.tile[x, y];
+				if (tile == null || !tile.active())
 					continue;
-					SDFSample sdfSample = SignedDistance.Circle(new Vector2(i - Main.maxTilesX / 2, j - Main.maxTilesY / 2), 100f);
-					sdfSample = SdfOperators.SmoothMin(sdfSample, SignedDistance.RoundedBox(new Vector2(i - 130 - Main.maxTilesX / 2, j - Main.maxTilesY / 2), new Vector2(50f, 75f), 20f, rotationRadians: MathHelper.PiOver4), 10f);
-					if (sdfSample.Distance < 0f)
+
+				Vector2 pos = new Vector2(x, y);
+				float noise = 0f;
+
+				switch (band)
+				{
+					case 0:
+						noise = WorldgenNoise.FastValue(pos * 0.04f, seed: 11);
+						break;
+					case 1:
+						noise = WorldgenNoise.FastSimplex(pos * 0.035f, seed: 23);
+						break;
+					case 2:
+						noise = WorldgenNoise.FastCellular(pos * 0.03f, seed: 37);
+						break;
+					case 3:
+						noise = WorldgenNoise.SimplexFbm(pos, seed: 41, octaves: 5, lacunarity: 2.1f, gain: 0.48f, scale: 0.006f);
+						break;
+					case 4:
+						noise = WorldgenNoise.FastValueFbm(pos, seed: 53, octaves: 6, lacunarity: 1.9f, gain: 0.55f, scale: 0.007f);
+						break;
+					case 5:
+						noise = WorldgenNoise.SimplexBillow(pos, seed: 67, octaves: 4, lacunarity: 2.2f, gain: 0.62f, scale: 0.0055f);
+						break;
+					case 6:
+						noise = WorldgenNoise.SimplexTurbulence(pos, seed: 79, octaves: 5, lacunarity: 2.3f, gain: 0.54f, scale: 0.0065f);
+						break;
+					case 7:
+						noise = WorldgenNoise.HybridMultifractal(pos, seed: 83, octaves: 4, lacunarity: 2.05f, gain: 0.6f, offset: 0.75f, scale: 0.0048f);
+						break;
+					case 8:
+						noise = WorldgenNoise.CellularFbm(pos, seed: 97, octaves: 4, lacunarity: 2.4f, gain: 0.58f, jitter: 0.85f, scale: 0.0062f);
+						break;
+					case 9:
+						{
+							float baseA = WorldgenNoise.FastValue(pos * 0.028f, seed: 101);
+							float baseB = WorldgenNoise.SimplexBillow(pos * 0.021f, seed: 113);
+							float mask = WorldgenNoise.FastCellular(pos * 0.024f, seed: 131);
+							float blended = WorldgenNoise.Blend(baseA, baseB, mask, feather: 0.18f);
+
+							Vector2 warpVec = WorldgenNoise.DomainWarpVector(pos * 0.018f, seed: 149, amplitude: 2.5f, iterations: 3);
+							float warpScalar = WorldgenNoise.DomainWarp(pos * 0.02f, seed: 157, amplitude: 1.8f, iterations: 3);
+							float curlMag = WorldgenNoise.CurlSimplex(pos * 0.022f, seed: 173, epsilon: 0.6f).Length();
+
+							noise = MathHelper.Clamp(blended + warpVec.Length() * 0.28f + warpScalar * 0.22f + curlMag * 0.18f, 0f, 1f);
+							break;
+						}
+					case 10:
 					{
-						tile.type = Terraria.ID.TileID.Gold;
+						float lightning = WorldgenNoise.LightningStrike(pos, seed: 196, scale: 0.008f, thickness: 1.0f, octaves: 24);
+						noise = lightning;
 
-						Vector2 gradient = sdfSample.Gradient;
-						float angle = MathF.Atan2(gradient.Y, gradient.X);
-						if (angle < 0f)
-							angle += MathHelper.TwoPi;
+						if (lightning > 0.7f)
+						{
+							tile.type = Terraria.ID.TileID.Meteorite;
+							tile.color((byte)Math.Clamp(18 + (int)(lightning * 11f), 0, 29));
 
-						int paintIndex = 1 + (int)MathF.Round(angle / MathHelper.TwoPi * 29f);
-						paintIndex = (int)MathHelper.Clamp(paintIndex, 1f, 29f);
-						tile.color((byte)paintIndex);
+						}
+						else if (lightning > 0.35f)
+						{
+							tile.type = Terraria.ID.TileID.Silver;
+							tile.color((byte)Math.Clamp(6 + (int)(lightning * 16f), 0, 29));
+
+						}
+
+						break;
 					}
+				}
+
+				if (noise > 0.8f)
+					tile.type = Terraria.ID.TileID.Gold;
+				else if (noise > 0.6f)
+					tile.type = Terraria.ID.TileID.Demonite;
+				else if (noise > 0.4f)
+					tile.type = Terraria.ID.TileID.Granite;
+				else if (noise > 0.2f)
+					tile.type = Terraria.ID.TileID.Marble;
+				else
+					tile.type = Terraria.ID.TileID.Dirt;
+			}
+		}
+
+		int patchHalf = 40;
+		int patchX = Math.Clamp(Main.spawnTileX - patchHalf, 0, width - 1);
+		int patchY = Math.Clamp(Main.spawnTileY - patchHalf, 0, height - 1);
+		int patchWidth = Math.Min(patchHalf * 2, width - patchX);
+		int patchHeight = Math.Min(patchHalf * 2, height - patchY);
+
+		if (patchWidth > 0 && patchHeight > 0)
+		{
+			var patch = new Rectangle(patchX, patchY, patchWidth, patchHeight);
+			var buffer = new float[patch.Width * patch.Height];
+
+			WorldgenNoise.FillNoiseMap(patch, buffer, sample =>
+			{
+				return WorldgenNoise.FastValueFbm(sample * 0.033f, seed: 211, octaves: 4, lacunarity: 2.15f, gain: 0.57f);
+			});
+
+			WorldgenNoise.Normalize(buffer);
+			WorldgenNoise.ApplyCurve(buffer, v => MathF.Pow(v, 1.4f));
+
+			for (int ry = 0; ry < patch.Height; ry++)
+			{
+				for (int rx = 0; rx < patch.Width; rx++)
+				{
+					int worldX = patch.Left + rx;
+					int worldY = patch.Top + ry;
+
+					Tile tile = Main.tile[worldX, worldY];
+					if (tile == null)
+						continue;
+
+					float value = buffer[ry * patch.Width + rx];
+					tile.type = value > 0.66f ? Terraria.ID.TileID.Crimstone
+						: value > 0.33f ? Terraria.ID.TileID.SnowBlock
+						: Terraria.ID.TileID.Mud;
+					tile.color((byte)Math.Clamp((int)(value * 30f), 0, 29));
 				}
 			}
 		}
+
 		base.PostWorldGen();
 	}
 }

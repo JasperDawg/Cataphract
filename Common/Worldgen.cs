@@ -1,7 +1,10 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Cataphractal.Common;
 using Microsoft.Xna.Framework;
+using Terraria;
+using Terraria.ModLoader;
 
 namespace Cataphract.Common;
 
@@ -290,3 +293,151 @@ public static class SDFTests
 		return field;
 	}
 }
+
+public static class WorldgenNoise
+{
+	private static readonly Vector2[] SimplexGradients =
+	{
+		new(1f, 1f), new(-1f, 1f), new(1f, -1f), new(-1f, -1f),
+		new(1f, 0f), new(-1f, 0f), new(0f, 1f), new(0f, -1f)
+	};
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static uint Hash(uint x)
+	{
+		x ^= x >> 16;
+		x *= 0x7feb352d;
+		x ^= x >> 15;
+		x *= 0x846ca68b;
+		x ^= x >> 16;
+		return x;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static uint Hash(int x, int y, int seed)
+	{
+		uint h = Hash((uint)(x) * 0x45d9f3u ^ (uint)(y) * 0x27d4eb2du ^ (uint)seed * 0x165667b1u);
+		return h;
+	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static float HashFloat(int x, int y, int seed)
+	{
+		return (Hash(x, y, seed) & 0xffffffu) / 0xffffffu;
+	}
+
+	public static float FastSimplex(Vector2 p, int seed = 0)
+	{
+		const float F2 = 0.366025403f;   // (sqrt(3) - 1) / 2
+		const float G2 = 0.211324865f;   // (3 - sqrt(3)) / 6
+
+		float s = (p.X + p.Y) * F2;
+		int i = (int)MathF.Floor(p.X + s);
+		int j = (int)MathF.Floor(p.Y + s);
+
+		float t = (i + j) * G2;
+		float X0 = i - t;
+		float Y0 = j - t;
+		float x0 = p.X - X0;
+		float y0 = p.Y - Y0;
+
+		int i1 = x0 > y0 ? 1 : 0;
+		int j1 = x0 > y0 ? 0 : 1;
+
+		float x1 = x0 - i1 + G2;
+		float y1 = y0 - j1 + G2;
+		float x2 = x0 - 1f + 2f * G2;
+		float y2 = y0 - 1f + 2f * G2;
+
+		float n0 = 0f, n1 = 0f, n2 = 0f;
+
+		int gi0 = (int)(Hash(i, j, seed) % SimplexGradients.Length);
+		int gi1 = (int)(Hash(i + i1, j + j1, seed) % SimplexGradients.Length);
+		int gi2 = (int)(Hash(i + 1, j + 1, seed) % SimplexGradients.Length);
+
+		float t0 = 0.5f - x0 * x0 - y0 * y0;
+		if (t0 > 0f)
+		{
+			t0 *= t0;
+			Vector2 g = SimplexGradients[gi0];
+			n0 = t0 * t0 * (g.X * x0 + g.Y * y0);
+		}
+
+		float t1 = 0.5f - x1 * x1 - y1 * y1;
+		if (t1 > 0f)
+		{
+			t1 *= t1;
+			Vector2 g = SimplexGradients[gi1];
+			n1 = t1 * t1 * (g.X * x1 + g.Y * y1);
+		}
+
+		float t2 = 0.5f - x2 * x2 - y2 * y2;
+		if (t2 > 0f)
+		{
+			t2 *= t2;
+			Vector2 g = SimplexGradients[gi2];
+			n2 = t2 * t2 * (g.X * x2 + g.Y * y2);
+		}
+
+		float value = 70f * (n0 + n1 + n2);
+		return MathHelper.Clamp(value * 0.5f + 0.5f, 0f, 1f);
+	}
+
+	// partially based on https://lygia.xyz/generative/worley
+	public static float FastCellular(Vector2 p, int seed = 0, float jitter = 0.9f)
+	{
+		int ix = (int)MathF.Floor(p.X);
+		int iy = (int)MathF.Floor(p.Y);
+
+		float fx = p.X - ix;
+		float fy = p.Y - iy;
+
+		float minDist = float.MaxValue;
+
+		for (int y = -1; y <= 1; y++)
+		{
+			for (int x = -1; x <= 1; x++)
+			{
+				int cx = ix + x;
+				int cy = iy + y;
+
+				uint h = Hash(cx, cy, seed);
+				float rx = ((h & 0xffu) / 255f - 0.5f) * jitter + x;
+				float ry = (((h >> 8) & 0xffu) / 255f - 0.5f) * jitter + y;
+
+				float dx = fx - rx;
+				float dy = fy - ry;
+				float dist = dx * dx + dy * dy;
+				if (dist < minDist)
+					minDist = dist;
+			}
+		}
+
+		return MathHelper.Clamp(MathF.Sqrt(minDist) * 1.4142f, 0f, 1f);
+	}
+}
+
+public class TestingModSystem : ModSystem
+{
+    public override void PostWorldGen()
+    {
+		for (int i = 0; i < Main.maxTilesX; i++) {
+			for (int j = 0; j < Main.maxTilesY; j++) {
+				Tile tile = Main.tile[i, j];
+				if (tile != null && tile.active()) {
+					float noiseValue = WorldgenNoise.FastSimplex(new Vector2(WorldgenNoise.FastCellular(new Vector2(i, j), seed: 12345), WorldgenNoise.FastCellular(new Vector2(i, j), seed: 12345)));
+					if (noiseValue > 0.5f) {
+						tile.type = Terraria.ID.TileID.Demonite;
+					}
+
+					SDFSample sdfSample = SignedDistance.Circle(new Vector2(i - Main.maxTilesX / 2, j - Main.maxTilesY / 2), 100f);
+					sdfSample = SdfOperators.SmoothMin(sdfSample, SignedDistance.RoundedBox(new Vector2(i - 130 - Main.maxTilesX / 2, j - Main.maxTilesY / 2), new Vector2(50f, 75f), 20f, rotationRadians: MathHelper.PiOver4), 10f);
+					if (sdfSample.Distance < 0f) {
+						tile.type = Terraria.ID.TileID.Gold;
+					}
+				}
+			}
+		}
+        base.PostWorldGen();
+    }
+}	

@@ -16,6 +16,8 @@ using Terraria.ModLoader.IO;
 using Terraria.Localization;
 using Terraria.GameContent.ItemDropRules;
 using System.Linq;
+using Cataphract.Common;
+
 namespace Cataphract.Content.Items
 {
     public class UnstableRecallium : ModItem
@@ -164,6 +166,8 @@ namespace Cataphract.Content.Items
         public override string Texture => Assets.Images.Content.Items.Potions.WarpGeode.KEY;
         bool Initialized = false;
         public uint type;
+        private static readonly RenderTargetPool EffectPool = new();
+
         public override void SetStaticDefaults()
         {
             ItemID.Sets.OpenableBag[Item.type] = true;
@@ -308,42 +312,98 @@ namespace Cataphract.Content.Items
             Debug.Assert(pulse is not null);
             Debug.Assert(bloom is not null);
 
-            var noiseSize = new Vector2(Assets.Images.Noise.Noise1.Asset.Width(), Assets.Images.Noise.Noise1.Asset.Height());
+            var device = Main.graphics.GraphicsDevice;
+            spriteBatch.End(out var ss);
 
-            pulse.Parameters.uTime = Main.GlobalTimeWrappedHourly;
+            float time = Main.GlobalTimeWrappedHourly;
+
+            pulse.Parameters.uTime = time;
             pulse.Parameters.uScale = 2f;
             pulse.Parameters.uSource = new Vector4(frame.Width, frame.Height, Main.screenPosition.X, Main.screenPosition.Y);
-            pulse.Apply();
 
-            spriteBatch.End(out var ss);
-            Main.spriteBatch.Begin(
-            SpriteSortMode.Immediate,
-            BlendState.AlphaBlend,
-            SamplerState.PointClamp,
-            DepthStencilState.Default,
-            RasterizerState.CullNone,
-            pulse.Shader,
-            inWorld ? Main.GameViewMatrix.EffectMatrix : Main.UIScaleMatrix
-            );
+            Point noiseTargetSize = new(frame.Width * effectScale, frame.Height * effectScale);
+                        bloom.Parameters.uTime = time;
+            bloom.Parameters.uSource = new Vector4(frame.Width, frame.Height, 0f, 0f);
 
-            int newscale = effectScale;
-            spriteBatch.Draw(Assets.Images.Noise.Noise1.Asset.Value, new Rectangle((int)position.X - frame.Width * newscale / 2, (int)position.Y - frame.Height * newscale / 2, frame.Width * newscale, frame.Height * newscale), new Rectangle(0, 0, (int)noiseSize.X, (int)noiseSize.Y), drawColor, 0f, origin, SpriteEffects.None, 0f);
-            spriteBatch.End();
+            int itemTargetWidth = Math.Max(1, (int)MathF.Ceiling(frame.Width * scale));
+            int itemTargetHeight = Math.Max(1, (int)MathF.Ceiling(frame.Height * scale));
+            Point itemTargetSize = new(itemTargetWidth, itemTargetHeight);
+            Vector2 itemCenter = new(itemTargetWidth * 0.5f, itemTargetHeight * 0.5f);
+            float itemRotation = MathF.Sin(time * MathHelper.PiOver4);
+            using var noiseLease = Main.spriteBatch.DrawWithEffects(
+                device,
+                EffectPool,
+                noiseTargetSize,
+                batch =>
+                {
+                    batch.Draw(
+                        Assets.Images.Noise.Noise1.Asset.Value,
+                        new Rectangle(0, 0, noiseTargetSize.X, noiseTargetSize.Y),
+                        new Rectangle(0, 0, Assets.Images.Noise.Noise1.Asset.Width(), Assets.Images.Noise.Noise1.Asset.Height()),
+                        drawColor);
+                        
+                },
+                new[]
+                {
+                    new EffectChainEntry(
+                        pulse.Shader,
+                        BlendState.AlphaBlend,
+                        SamplerState.PointClamp,
+                        DepthStencilState.Default,
+                        RasterizerState.CullNone),
+                    new EffectChainEntry(
+                        bloom.Shader,
+                        BlendState.AlphaBlend,
+                        SamplerState.PointClamp,
+                        DepthStencilState.Default,
+                        RasterizerState.CullNone)
+                },
+                clear: true,
+                clearColor: Color.Transparent);
 
-            bloom.Parameters.uTime = Main.GlobalTimeWrappedHourly;
-            bloom.Parameters.uSource = new Vector4(frame.Width, frame.Height, 0, 0);
-            bloom.Apply();
-            Main.spriteBatch.Begin(
-            SpriteSortMode.Immediate,
-            BlendState.AlphaBlend,
-            SamplerState.PointClamp,
-            DepthStencilState.Default,
-            RasterizerState.CullNone,
-            bloom.Shader,
-            inWorld ? Main.GameViewMatrix.EffectMatrix : Main.UIScaleMatrix
-            );
 
-            spriteBatch.Draw(TextureAssets.Item[Item.type].Value, new Vector2(position.X + MathF.Sin(Main.GlobalTimeWrappedHourly * 1f) * 5f, position.Y + MathF.Cos(Main.GlobalTimeWrappedHourly * 2f) * 3f), frame, drawColor, 0f + MathF.Sin(Main.GlobalTimeWrappedHourly * MathHelper.PiOver4), origin, scale, SpriteEffects.None, 0f);
+
+            using var itemLease = Main.spriteBatch.DrawWithEffects(
+                device,
+                EffectPool,
+                itemTargetSize,
+                batch =>
+                {
+                    batch.Draw(
+                        TextureAssets.Item[Item.type].Value,
+                        itemCenter,
+                        frame,
+                        Color.White,
+                        itemRotation,
+                        origin,
+                        scale,
+                        SpriteEffects.None,
+                        0f);
+                },
+                new[]
+                {
+                    new EffectChainEntry(
+                        bloom.Shader,
+                        BlendState.AlphaBlend,
+                        SamplerState.PointClamp,
+                        DepthStencilState.Default,
+                        RasterizerState.CullNone)
+                },
+                clear: true,
+                clearColor: Color.Transparent);
+
+            Matrix transform = inWorld ? Main.GameViewMatrix.EffectMatrix : Main.UIScaleMatrix;
+            Main.spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, DepthStencilState.Default, RasterizerState.CullNone, null, transform);
+
+            Vector2 offset = new Vector2(noiseTargetSize.X * 0.5f + itemTargetSize.X / effectScale, noiseTargetSize.Y * 0.5f);
+            var noiseDestination = new Rectangle((int)position.X - frame.Width * effectScale / 2, (int)position.Y - frame.Height * effectScale / 2, frame.Width * effectScale, frame.Height * effectScale);
+            Main.spriteBatch.Draw(noiseLease.Target, noiseDestination, Color.White);
+            //spriteBatch.Draw(noiseLease.Target, new Rectangle((int)position.X - frame.Width * effectScale / 2, (int)position.Y - frame.Height * effectScale / 2, frame.Width * effectScale, frame.Height * effectScale), new Rectangle(0, 0, frame.Width, frame.Height / 2), drawColor, 0f, origin, SpriteEffects.None, 0f);
+
+            Vector2 itemOffset = new(MathF.Sin(time) * 5f, MathF.Cos(time * 2f) * 3f);
+            Vector2 itemPosition = position + itemOffset - new Vector2(itemTargetSize.X, itemTargetSize.Y) * 0.5f;
+            Main.spriteBatch.Draw(itemLease.Target, itemPosition, Color.White);
+
 
             spriteBatch.Restart(ss);
         }

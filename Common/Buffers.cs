@@ -133,6 +133,7 @@ public sealed class RenderTargetPool : IDisposable
             _isValid = true;
         }
 
+
         public void Dispose()
         {
             if (!_isValid)

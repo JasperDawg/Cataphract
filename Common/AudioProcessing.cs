@@ -932,6 +932,7 @@ public sealed class TestMusicFilterSystem : ModSystem
 
     public override void PostUpdateEverything()
     {
+        return;
         if (_exampleInstance == null || _processedSamples.Length == 0)
             return;
 

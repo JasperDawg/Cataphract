@@ -2255,6 +2255,7 @@ public class TestPrimitiveRenderSystem : ModSystem
         Main.spriteBatch.End(out var ss);
 
         float deltaTime = 1f / (Main.frameRate <= 0 ? 60f : Main.frameRate);
+        var device = Main.graphics.GraphicsDevice;
 
         var path = new List<Vector3>
             {
@@ -2313,11 +2314,10 @@ public class TestPrimitiveRenderSystem : ModSystem
         }
 
         fluid.Step(deltaTime);
-        _fluidMesh = fluid.BuildDensityMesh(new Color(0, 0, 0, 0), new Color(100, 0, 100, 100));
+        _fluidMesh = fluid.BuildDensityMesh(new Color(0, 0, 0, 0), new Color(255, 255, 255));
         PrimitiveRenderer.DrawMesh(Matrix.Identity, view, projection, _fluidMesh, blendState: BlendState.AlphaBlend);
-        // todo: feed this to a shader
-        _previousFluidMouse = fluidMouse;
 
         Main.spriteBatch.Begin(ss);
     }
+
 }

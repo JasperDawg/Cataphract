@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Terraria;
+using Terraria.GameContent;
 
 namespace Cataphract.Common;
 
@@ -787,5 +789,40 @@ public sealed class VerletCloth
 
         return indices;
     }
+}
+
+public static class ConstraintDebugAttachments
+{
+	private static float ComputeRopeLength(VerletRope rope)
+	{
+		var positions = rope.Positions;
+		if (positions.Length <= 1)
+			return 0f;
+
+		float total = 0f;
+		for (int i = 1; i < positions.Length; i++)
+			total += Vector3.Distance(positions[i - 1], positions[i]);
+		return total;
+	}
+
+	public static ReactivePanel CreateRopeInspector(VerletRope rope)
+	{
+		var lengthValue = new ReactiveValue<float>(ComputeRopeLength(rope));
+        var pos = new ReactiveValue<Vector3>(rope.Positions[..^1].ToArray()[0]);
+        
+		var panel = new ReactivePanel(new Vector2(16f, 16f));
+
+		panel.AddUpdater(_ => lengthValue.Value = ComputeRopeLength(rope));
+        panel.AddUpdater(_ => pos.Value = rope.Positions[..^1].ToArray()[0]);
+        panel.AddUpdater(_ => panel.LocalPosition = new Vector2(pos.Value.X, pos.Value.Y));
+
+		panel.Children.Add(new RLabel(
+			lengthValue.Select(value => $"Rope length: {value:F2}"),
+			() => FontAssets.MouseText.Value,
+			Vector2.Zero,
+			Color.White));
+
+		return panel;
+	}
 }
 

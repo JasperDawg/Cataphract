@@ -1274,7 +1274,7 @@ public static class TriangleStripBuilder
                 : new PrimitiveMesh(colorVertices!, stripIndices, PrimitiveType.TriangleStrip);
         }
 
-        if (textured)   
+        if (textured)
         {
             var vertexList = new List<VertexPositionColorTexture>(texturedVertices!);
             var indexList = new List<short>();
@@ -1733,39 +1733,39 @@ public static class TriangleStripBuilder
 
 internal static class PrimitiveSimd
 {
-	private static readonly System.Numerics.Vector<int> LaneOffsets = CreateLaneOffsets();
+    private static readonly System.Numerics.Vector<int> LaneOffsets = CreateLaneOffsets();
 
-	public static void FillSequentialIndices(Span<short> indices)
-	{
-		int i = 0;
-		if (System.Numerics.Vector.IsHardwareAccelerated)
-		{
-			int width = System.Numerics.Vector<int>.Count;
-			Span<int> temp = width <= 16
-				? stackalloc int[width]
-				: new int[width];
+    public static void FillSequentialIndices(Span<short> indices)
+    {
+        int i = 0;
+        if (System.Numerics.Vector.IsHardwareAccelerated)
+        {
+            int width = System.Numerics.Vector<int>.Count;
+            Span<int> temp = width <= 16
+                ? stackalloc int[width]
+                : new int[width];
 
-			while (i <= indices.Length - width)
-			{
-				(LaneOffsets + new System.Numerics.Vector<int>(i)).CopyTo(temp);
-				for (int lane = 0; lane < width; lane++)
-					indices[i + lane] = (short)temp[lane];
-				i += width;
-			}
-		}
+            while (i <= indices.Length - width)
+            {
+                (LaneOffsets + new System.Numerics.Vector<int>(i)).CopyTo(temp);
+                for (int lane = 0; lane < width; lane++)
+                    indices[i + lane] = (short)temp[lane];
+                i += width;
+            }
+        }
 
-		for (; i < indices.Length; i++)
-			indices[i] = (short)i;
-	}
+        for (; i < indices.Length; i++)
+            indices[i] = (short)i;
+    }
 
-	private static System.Numerics.Vector<int> CreateLaneOffsets()
-	{
-		int width = System.Numerics.Vector<int>.Count;
-		Span<int> lanes = stackalloc int[width];
-		for (int i = 0; i < width; i++)
-			lanes[i] = i;
-		return new System.Numerics.Vector<int>(lanes);
-	}
+    private static System.Numerics.Vector<int> CreateLaneOffsets()
+    {
+        int width = System.Numerics.Vector<int>.Count;
+        Span<int> lanes = stackalloc int[width];
+        for (int i = 0; i < width; i++)
+            lanes[i] = i;
+        return new System.Numerics.Vector<int>(lanes);
+    }
 }
 
 public static class PrimitiveShapeBuilder
@@ -2249,32 +2249,9 @@ public class TestPrimitiveRenderSystem : ModSystem
     {
         if (!PrimitiveRenderer.IsReady)
             return;
-
-            return;
         Main.spriteBatch.End(out var ss);
 
         float deltaTime = 1f / (Main.frameRate <= 0 ? 60f : Main.frameRate);
-        EnsureParticleDemo(deltaTime);
-
-
-        var path = new List<Vector3>
-            {
-                new Vector3(100, 100, 0),
-                new Vector3(200, 150, 0),
-                new Vector3(300, 100, 0),
-                new Vector3(400, 150, 0),
-                new Vector3(Main.MouseScreen, 0)
-            };
-        var gradientColors = new Color[]
-        {
-            Color.Orange,
-            Color.White,
-            Color.Red,
-            Color.White,
-            Color.Violet
-        };
-
-        var strip = TriangleStripBuilder.BuildStrip(path, width: 20f, gradientColors, smoothingSegments: 0, joinStyle: StripJoinStyle.Miter, textured: false);
 
         var world = Matrix.Identity;
         var view = Matrix.Identity;
@@ -2282,182 +2259,6 @@ public class TestPrimitiveRenderSystem : ModSystem
             0, Main.screenWidth,
             Main.screenHeight, 0,
             -500f, 500f);
-
-        PrimitiveRenderer.DrawMesh(
-            world, view, projection,
-            strip,
-            blendState: BlendState.AlphaBlend);
-
-
-
-        var coloredStrip = TriangleStripBuilder.BuildStrip(
-            path,
-            t => MathHelper.Lerp(40f, 40f, t),
-            gradientColors,
-            easing: Easing.Easing.InOutSine,
-            smoothingSegments: 16,
-            startCap: StripCapStyle.HalfCircle,
-            endCap: StripCapStyle.Triangle,
-            capSegments: 16, textured: false, widthAttenuation: StripWidthAttenuation.ContinuitySquared, smoothingCurve: StripCurveType.CubicBezier);
-
-        world = Matrix.CreateTranslation(0, 300, 0);
-
-        PrimitiveRenderer.DrawMesh(
-            world, view, projection,
-            coloredStrip,
-            blendState: BlendState.AlphaBlend);
-
-        var customStrip = TriangleStripBuilder.BuildStrip(
-            path,
-            t => MathHelper.Lerp(30f, 10f, t),
-            progress => Color.Lerp(Color.Aquamarine, Color.MediumPurple, progress),
-            easing: Easing.Easing.InOutSine,
-            upHint: Vector3.UnitZ,
-            smoothingSegments: 64,
-            startCap: StripCapStyle.Triangle,
-            endCap: StripCapStyle.HalfCircle,
-            capSegments: 12);
-
-        world = Matrix.CreateTranslation(0, 540, 0);
-
-        PrimitiveRenderer.DrawMesh(
-            world, view, projection,
-            customStrip,
-            blendState: BlendState.AlphaBlend);
-
-        var quad = PrimitiveShapeBuilder.BuildRectangularQuad(
-            new Vector3(560f, 140f, 0f),
-            new Vector2(120f, 70f),
-            Color.CadetBlue,
-            Vector3.Backward,
-            Vector3.Up, true)
-            .Scale(new Vector3(1.15f, 0.85f, 1f));
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            quad,
-            blendState: BlendState.AlphaBlend);
-
-        var hexagon = PrimitiveShapeBuilder.BuildRegularPolygon(
-            new Vector3(720f, 160f, 0f),
-            radius: 60f,
-            sides: 6,
-            color: Color.Orange,
-            normal: Vector3.Backward,
-            upHint: Vector3.Up, true);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            hexagon,
-            blendState: BlendState.AlphaBlend);
-
-        var polygon = PrimitiveShapeBuilder.BuildArbitraryPolygon(
-            new[]
-            {
-                new Vector3(520f, 260f, 0f),
-                new Vector3(620f, 220f, 0f),
-                new Vector3(700f, 260f, 0f),
-                new Vector3(660f, 320f, 0f),
-                new Vector3(560f, 340f, 0f)
-            },
-            Color.Goldenrod,
-            textured: true);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            polygon,
-            blendState: BlendState.AlphaBlend);
-
-        Stopwatch watch;
-        watch = Stopwatch.StartNew();
-        var particleMesh = Testicles!.BuildBillboards(depth: -40f, textured: true);
-        if (particleMesh.IsValid)
-        {
-            PrimitiveRenderer.DrawMesh(
-                Matrix.Identity, view, projection,
-                particleMesh,
-                blendState: BlendState.Additive);
-        }
-        watch.Stop();
-        Main.NewText($"Particle Primitive Build Time: {watch.Elapsed.TotalMilliseconds} ms");
-
-
-        var ellipse = PrimitiveShapeBuilder.BuildEllipse(
-            new Vector3(1200f, 420f, 0f),
-            new Vector2(90f, 90f),
-            segments: 48,
-            color: Color.MediumPurple,
-            normal: -Vector3.Backward,
-            upHint: -Vector3.Up, true)
-            .CurveEdges(-Vector3.UnitZ, 80f, 4).Extrude(Vector3.UnitZ * (50f * MathF.Sin(Main.GlobalTimeWrappedHourly * 4)), true).Scale(new Vector3(1.00f, 1.00f, 1f))
-            .Rotate(Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.Sin(Main.GlobalTimeWrappedHourly)) / Quaternion.CreateFromYawPitchRoll(0.1f * MathF.Sin(Main.GlobalTimeWrappedHourly), 0f, 0f));
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            ellipse,
-            blendState: BlendStates.Multiplicative);
-
-        var semiCircle = PrimitiveShapeBuilder.BuildSemiCircle(
-            new Vector3(860f, 420f, 0f),
-            radius: 60f,
-            segments: 24,
-            color: Color.Crimson,
-            normal: Vector3.Backward,
-            forward: Vector3.UnitX, true);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            semiCircle,
-            blendState: BlendState.AlphaBlend);
-
-        var triangle = PrimitiveShapeBuilder.BuildTriangle(
-            new Vector3(900f, 120f, 0f),
-            new Vector3(980f, 200f, 0f),
-            new Vector3(820f, 200f, 0f),
-            Color.ForestGreen, true);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            triangle,
-            blendState: BlendState.AlphaBlend);
-
-        var sphere = PrimitiveShapeBuilder.BuildSphere(
-            new Vector3(100f, 820f, 0f),
-            radius: 80f,
-            latitudeSegments: 8,
-            longitudeSegments: 8,
-            colorFunc: normal => Color.Lerp(Color.White, Color.Purple, (normal.Y + 1f) * 0.5f), true);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            sphere,
-            blendState: BlendState.AlphaBlend);
-
-        var fabrikStrip = ConstraintExamples.BuildFabrikStripExample(
-            root: new Vector3(1000f, 400f, 0f),
-            target: new Vector3(Main.MouseScreen, 0f),
-            segmentLength: 128f,
-            joints: 3,
-            width: 32f,
-            startColor: Color.DeepSkyBlue,
-            endColor: Color.OrangeRed);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            fabrikStrip,
-            blendState: BlendState.AlphaBlend);
-
-        var cloth = ConstraintExamples.BuildVerletClothExample(
-            origin: new Vector3(440f, 400f, 0f),
-            rightExtent: new Vector3(260f, 0f, 0f),
-            downExtent: new Vector3(0f, 180f, 0f),
-            color: Color.LightSkyBlue * 0.85f,
-            deltaTime: 1f / 60f);
-
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            cloth,
-            blendState: BlendState.AlphaBlend);
 
         var rope = ConstraintExamples.BuildVerletRopeExample(
             start: new Vector3(400f, 300f, 0f),
@@ -2471,6 +2272,8 @@ public class TestPrimitiveRenderSystem : ModSystem
             rope,
             blendState: BlendState.AlphaBlend);
         Main.spriteBatch.Begin(ss);
+        ConstraintExamples.panel.Update(Main._drawInterfaceGameTime);
+        ConstraintExamples.panel.Render(Main.spriteBatch);
     }
 
     private static void EnsureParticleDemo(float deltaTime)
@@ -2492,7 +2295,7 @@ public class TestPrimitiveRenderSystem : ModSystem
             {
                 world.Emit((entity, w) =>
                 {
-                    
+
                     Vector2 spawn = new Vector2(960f + Main.rand.NextFloat(-48f, 48f), 620f + Main.rand.NextFloat(-28f, 28f));
                     w.SetPosition(entity, spawn);
                     w.SetVelocity(entity, new Vector2(Main.rand.NextFloat(-40f, 40f), Main.rand.NextFloat(-120f, -80f)));
@@ -2530,6 +2333,7 @@ public class TestPrimitiveRenderSystem : ModSystem
                 end: Vector3.UnitX * 300f,
                 segments: 20);
 
+        public static ReactivePanel panel = ConstraintDebugAttachments.CreateRopeInspector(verletRope);
         private static FabrikChain? fabrikChain;
         private static VerletCloth? verletCloth;
 
@@ -2539,6 +2343,7 @@ public class TestPrimitiveRenderSystem : ModSystem
             Debug.Assert(rope != null, "Rope not initialized.");
 
             rope.Simulate(deltaTime, acceleration: new Vector3(0f, 800.0f, 0f), constraintIterations: 36, pinnedStart: new Vector3(Main.MouseScreen, 0f), pinnedEnd: null, damping: 1f, stiffness: 1f);
+
             return rope.BuildTriangleStrip(width, color, textured: false, joinStyle: StripJoinStyle.Perpendicular, startCap: StripCapStyle.HalfCircle, endCap: StripCapStyle.HalfCircle);
         }
 

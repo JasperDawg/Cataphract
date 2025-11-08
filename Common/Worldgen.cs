@@ -748,8 +748,10 @@ public class TestingModSystem : ModSystem
 			for (int y = 0; y < height; y++)
 			{
 				Tile tile = Main.tile[x, y];
-				if (tile == null || !tile.active())
+				if (tile == null)
 					continue;
+
+					tile.active(true);
 
 				Vector2 pos = new Vector2(x, y);
 				float noise = 0f;
@@ -812,7 +814,6 @@ public class TestingModSystem : ModSystem
 						{
 							tile.type = Terraria.ID.TileID.Silver;
 							tile.color((byte)Math.Clamp(6 + (int)(lightning * 16f), 0, 29));
-
 						}
 
 						break;

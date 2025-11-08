@@ -2242,8 +2242,11 @@ public static class PrimitiveShapeBuilder
 
 public class TestPrimitiveRenderSystem : ModSystem
 {
-    private static ParticleWorld? Testicles;
-    private static ParticleComponentHandle<float> _wobbleHandle;
+    private static FluidField? _fluidField;
+    private static PrimitiveMesh _fluidMesh;
+    private static Vector2 _previousFluidMouse;
+    private static float _fluidImpulseTimer;
+    private static bool _fluidPrimed;
 
     public override void PostDrawInterface(SpriteBatch spriteBatch)
     {
@@ -2253,178 +2256,68 @@ public class TestPrimitiveRenderSystem : ModSystem
 
         float deltaTime = 1f / (Main.frameRate <= 0 ? 60f : Main.frameRate);
 
+        var path = new List<Vector3>
+            {
+                new Vector3(100, 100, 0),
+                new Vector3(200, 150, 0),
+                new Vector3(300, 100, 0),
+                new Vector3(400, 150, 0),
+                new Vector3(Main.MouseScreen, 0)
+            };
+        var gradientColors = new Color[]
+        {
+            Color.Orange,
+            Color.White,
+            Color.Red,
+            Color.White,
+            Color.Violet
+        };
+
+        var strip = TriangleStripBuilder.BuildStrip(path, width: 20f, gradientColors, smoothingSegments: 0, joinStyle: StripJoinStyle.Miter, textured: false);
+
         var world = Matrix.Identity;
         var view = Matrix.Identity;
         var projection = Matrix.CreateOrthographicOffCenter(
             0, Main.screenWidth,
             Main.screenHeight, 0,
-            -500f, 500f);
+         -500f, 500f);
 
-        var rope = ConstraintExamples.BuildVerletRopeExample(
-            start: new Vector3(400f, 300f, 0f),
-            end: new Vector3(700f, 500f, 0f),
-            color: Color.SandyBrown,
-            width: 8f,
-            deltaTime: 1f / 60f);
+        var fluid = _fluidField ??= new FluidField(
+            gridSize: 60,
+            diffusion: 0.000008f,
+            viscosity: 0.0004f,
+            origin: new Vector2(720f, 520f),
+            cellSize: 8f);
+        fluid.SyncTilesFromWorld();
+        Vector2 fluidMouse = Main.MouseScreen;
+        if (!_fluidPrimed)
+        {
+            _previousFluidMouse = fluidMouse;
+            _fluidPrimed = true;
+        }
+        Vector2 fluidVelocity = (fluidMouse - _previousFluidMouse) / Math.Max(deltaTime, Epsilon);
 
-        PrimitiveRenderer.DrawMesh(
-            Matrix.Identity, view, projection,
-            rope,
-            blendState: BlendState.AlphaBlend);
+        if (Main.mouseLeft)
+            fluid.AddImpulse(fluidMouse, fluidVelocity * 0.00015f, 0.45f);
+
+        if (_fluidImpulseTimer <= 0f)
+        {
+            float width = fluid.Resolution * fluid.CellSize;
+            Vector2 fountain = fluid.Origin + new Vector2(width * 0.5f, width * 0.1f);
+            fluid.AddImpulse(fountain, new Vector2(Main.rand.NextFloat(-1f, 1f), 14f), 30.9f);
+            _fluidImpulseTimer = 0.1f;
+        }
+        else
+        {
+            _fluidImpulseTimer -= deltaTime;
+        }
+
+        fluid.Step(deltaTime);
+        _fluidMesh = fluid.BuildDensityMesh(new Color(0, 0, 0, 0), new Color(100, 0, 100, 100));
+        PrimitiveRenderer.DrawMesh(Matrix.Identity, view, projection, _fluidMesh, blendState: BlendState.AlphaBlend);
+        // todo: feed this to a shader
+        _previousFluidMouse = fluidMouse;
+
         Main.spriteBatch.Begin(ss);
-        ConstraintExamples.panel.Update(Main._drawInterfaceGameTime);
-        ConstraintExamples.panel.Render(Main.spriteBatch);
     }
-
-    private static void EnsureParticleDemo(float deltaTime)
-    {
-        var world = Testicles;
-        if (world == null)
-        {
-            world = new ParticleWorld(512)
-            {
-                DefaultTexture = Assets.Images.Particles.Star2.Asset.Value
-            };
-            _wobbleHandle = world.RegisterComponent<float>(0f);
-            Testicles = world;
-        }
-
-        if (world.Count < 96)
-        {
-            for (int i = 0; i < 6; i++)
-            {
-                world.Emit((entity, w) =>
-                {
-
-                    Vector2 spawn = new Vector2(960f + Main.rand.NextFloat(-48f, 48f), 620f + Main.rand.NextFloat(-28f, 28f));
-                    w.SetPosition(entity, spawn);
-                    w.SetVelocity(entity, new Vector2(Main.rand.NextFloat(-40f, 40f), Main.rand.NextFloat(-120f, -80f)));
-                    w.SetAcceleration(entity, new Vector2(0f, 180f));
-                    w.SetLifetime(entity, Main.rand.NextFloat(1.1f, 3.6f));
-                    w.SetColor(entity, Color.Lerp(Color.BlueViolet, Color.DarkRed, Main.rand.NextFloat()));
-                    w.SetScale(entity, Vector2.One * Main.rand.NextFloat(0.45f, 0.9f));
-                    w.SetRotation(entity, Main.rand.NextFloat(MathHelper.TwoPi));
-                    w.SetTextureRegion(entity, new Rectangle(0, 0, Assets.Images.Particles.Star2.Asset.Value.Width, Assets.Images.Particles.Star2.Asset.Value.Height));
-                    ref float wobble = ref w.AddComponent(entity, _wobbleHandle);
-                    wobble = Main.rand.NextFloat(MathHelper.TwoPi);
-                });
-            }
-        }
-
-        world.Update(deltaTime, new Vector2(0f, 120f));
-
-        world.ForEach(entity =>
-        {
-            if (!world.HasComponent(entity, _wobbleHandle))
-                return;
-            ref float wobble = ref world.GetComponent(entity, _wobbleHandle);
-            wobble += deltaTime * 3f;
-            float swing = MathF.Sin(wobble);
-            float pulse = .2f + 0.4f * MathF.Abs(MathF.Cos(wobble));
-            world.SetRotation(entity, swing * 0.6f);
-            world.SetScale(entity, Vector2.One * pulse);
-        });
-    }
-
-    public static class ConstraintExamples
-    {
-        private static VerletRope? verletRope = new VerletRope(
-                start: Vector3.Zero,
-                end: Vector3.UnitX * 300f,
-                segments: 20);
-
-        public static ReactivePanel panel = ConstraintDebugAttachments.CreateRopeInspector(verletRope);
-        private static FabrikChain? fabrikChain;
-        private static VerletCloth? verletCloth;
-
-        public static PrimitiveMesh BuildVerletRopeExample(Vector3 start, Vector3 end, float width, Color color, float deltaTime)
-        {
-            var rope = verletRope;
-            Debug.Assert(rope != null, "Rope not initialized.");
-
-            rope.Simulate(deltaTime, acceleration: new Vector3(0f, 800.0f, 0f), constraintIterations: 36, pinnedStart: new Vector3(Main.MouseScreen, 0f), pinnedEnd: null, damping: 1f, stiffness: 1f);
-
-            return rope.BuildTriangleStrip(width, color, textured: false, joinStyle: StripJoinStyle.Perpendicular, startCap: StripCapStyle.HalfCircle, endCap: StripCapStyle.HalfCircle);
-        }
-
-        public static PrimitiveMesh BuildFabrikStripExample(Vector3 root, Vector3 target, float segmentLength, int joints, float width, Color startColor, Color endColor)
-        {
-            var chain = fabrikChain;
-            if (chain == null || chain.JointCount != joints)
-            {
-                var initial = new Vector3[joints];
-                for (int i = 0; i < joints; i++)
-                    initial[i] = root + new Vector3(segmentLength * i, 0f, 0f);
-                fabrikChain = chain = new FabrikChain(initial);
-            }
-
-            ConfigureFabrikConstraints(chain, root, segmentLength);
-
-            float fps = Main.frameRate <= 0 ? 60f : 1f / Main.frameRate;
-            float deltaTime = 1f / fps;
-
-            chain.Responsiveness = 12f;
-            chain.ResetJoint(0, root, resetHistory: true);
-            chain.Solve(target, rootOverride: root, tolerance: 0f, maxIterations: 128, deltaTime: deltaTime);
-
-            var path = new List<Vector3>(chain.JointCount);
-            var colors = new Color[chain.JointCount];
-
-            for (int i = 0; i < chain.JointCount; i++)
-            {
-                path.Add(chain.Joints[i]);
-                float t = chain.JointCount == 1 ? 0f : i / (float)(chain.JointCount - 1);
-                colors[i] = Color.Lerp(startColor, endColor, t);
-            }
-
-            return TriangleStripBuilder.BuildStrip(
-                path,
-                width,
-                colors,
-                smoothingSegments: 0,
-                joinStyle: StripJoinStyle.Miter,
-                textured: true,
-                startCap: StripCapStyle.HalfCircle,
-                endCap: StripCapStyle.HalfCircle);
-        }
-
-        public static PrimitiveMesh BuildVerletClothExample(Vector3 origin, Vector3 rightExtent, Vector3 downExtent, Color color, float deltaTime)
-        {
-            var cloth = verletCloth;
-            if (cloth == null)
-            {
-                cloth = new VerletCloth(origin, rightExtent, downExtent, widthSegments: 20, heightSegments: 20);
-                verletCloth = cloth;
-            }
-
-            int maxX = 18;
-            cloth.PinNode(0, 0, origin);
-            cloth.PinNode(maxX / 2, 0, origin + rightExtent * 0.5f);
-            cloth.PinNode(maxX, 0, origin + rightExtent);
-
-            cloth.Simulate(deltaTime, acceleration: new Vector3(5000f * MathF.Sin(Main.GlobalTimeWrappedHourly), 950f, 0f), constraintIterations: 10, substeps: 2, damping: 0.995f, stiffness: 0.92f, maxVelocity: 35f);
-            return cloth.BuildMesh(color, textured: true);
-        }
-
-        private static void ConfigureFabrikConstraints(FabrikChain chain, Vector3 root, float segmentLength)
-        {
-            float maxRadius = segmentLength * (chain.JointCount - 1) * 1.0f;
-            chain.Responsiveness = 9f;
-
-            for (int i = 0; i < chain.JointCount; i++)
-            {
-                if (i == 0)
-                {
-                    chain.SetConstraint(i, new FabrikPlaneConstraint(root, Vector3.UnitZ, followRoot: true));
-                }
-                else
-                {
-                    chain.SetConstraint(i, new FabrikCompositeConstraint(
-                        new FabrikSphereConstraint(0f, maxRadius, followRoot: true),
-                        new FabrikConeConstraint(70f, Vector3.UnitX)));
-                }
-            }
-        }
-    }
-
 }

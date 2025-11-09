@@ -644,6 +644,39 @@ internal static class AssetReferences
                         return new WrapperShaderData<Parameters>(Asset, "ShieldShader");
                     }
                 }
+
+                public static class FluidGradient
+                {
+                    public sealed class Parameters : IShaderParameters
+                    {
+                        public Microsoft.Xna.Framework.Graphics.Texture2D? DensitySampler { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector3 LowColor { get; set; }
+
+                        public Microsoft.Xna.Framework.Vector3 HighColor { get; set; }
+
+                        public float AlphaScale { get; set; }
+
+                        public void Apply(Microsoft.Xna.Framework.Graphics.EffectParameterCollection parameters)
+                        {
+                            parameters["DensitySampler"]?.SetValue(DensitySampler);
+                            parameters["LowColor"]?.SetValue(LowColor);
+                            parameters["HighColor"]?.SetValue(HighColor);
+                            parameters["AlphaScale"]?.SetValue(AlphaScale);
+                        }
+                    }
+
+                    public const string KEY = "Cataphract/Assets/Shaders/Misc/FluidGradient";
+
+                    public static ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect> Asset => lazy.Value;
+
+                    private static readonly System.Lazy<ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Effect>> lazy = new(() => Terraria.ModLoader.ModContent.Request<Microsoft.Xna.Framework.Graphics.Effect>(KEY, ReLogic.Content.AssetRequestMode.ImmediateLoad));
+
+                    public static WrapperShaderData<Parameters> CreateP0()
+                    {
+                        return new WrapperShaderData<Parameters>(Asset, "P0");
+                    }
+                }
             }
         }
     }

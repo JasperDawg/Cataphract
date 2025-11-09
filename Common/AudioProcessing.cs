@@ -12,6 +12,7 @@ using ReLogic.Utilities;
 using Terraria;
 using Terraria.Audio;
 using Terraria.ModLoader;
+using System.Linq;
 
 namespace Cataphract.Common;
 
@@ -797,7 +798,142 @@ public sealed class ReverseAudioEffect : IAudioDspEffect
 }
 
 #endregion
+#region Subtractive synthesizer
 
+public enum Waveform
+{
+	Saw,
+	Square,
+	Triangle,
+	Noise
+}
+
+public sealed record SubtractiveSynthPreset(
+	string Name,
+	Waveform Waveform,
+	float PulseWidth = 0.5f,
+	float FilterCutoff = 1200f,
+	float FilterResonance = 0.1f,
+	float AttackSeconds = 0.02f,
+	float DecaySeconds = 0.12f,
+	float SustainLevel = 0.6f,
+	float ReleaseSeconds = 0.18f);
+
+public static class SubtractiveSynthPresets
+{
+	public static readonly SubtractiveSynthPreset ClassicSaw = new(
+		"The Saw", Waveform.Saw, FilterCutoff: 1800f, FilterResonance: 0.2f);
+
+	public static readonly SubtractiveSynthPreset SquareLead = new(
+		"Basic Square Lead", Waveform.Square, PulseWidth: 0.42f, FilterCutoff: 1500f, FilterResonance: 0.35f,
+		AttackSeconds: 0.01f, DecaySeconds: 0.18f, SustainLevel: 0.55f, ReleaseSeconds: 0.22f);
+
+	public static readonly SubtractiveSynthPreset TriangleSoft = new(
+		"Triangle Soft", Waveform.Triangle, FilterCutoff: 2200f, FilterResonance: 0.1f,
+		AttackSeconds: 0.04f, DecaySeconds: 0.2f, SustainLevel: 0.8f, ReleaseSeconds: 0.4f);
+
+	public static IEnumerable<SubtractiveSynthPreset> All
+	{
+		get
+		{
+			yield return ClassicSaw;
+			yield return SquareLead;
+			yield return TriangleSoft;
+		}
+	}
+}
+
+public sealed class SubtractiveSynth
+{
+	private readonly float _sampleRate;
+
+	public SubtractiveSynth(float sampleRate = 44100f) =>
+		_sampleRate = Math.Max(1000f, sampleRate);
+
+	public float[] RenderNote(SubtractiveSynthPreset preset, float frequency, float durationSeconds, float gain = 0.7f)
+	{
+		int samples = Math.Max(1, (int)MathF.Round(durationSeconds * _sampleRate));
+		var buffer = new float[samples];
+		float phase = 0f;
+		float phaseIncrement = frequency / _sampleRate;
+		float pulse = MathHelper.Clamp(preset.PulseWidth, 0.05f, 0.95f);
+
+		float filterState = 0f;
+		float resonance = MathHelper.Clamp(preset.FilterResonance, 0f, 0.95f);
+		float cutoff = MathHelper.Clamp(preset.FilterCutoff, 50f, _sampleRate * 0.45f);
+		float pole = MathF.Exp(-2f * MathF.PI * cutoff / _sampleRate);
+		float alpha = 1f - pole;
+
+		int attackSamples = Math.Max(1, (int)(_sampleRate * preset.AttackSeconds));
+		int decaySamples = Math.Max(1, (int)(_sampleRate * preset.DecaySeconds));
+		int releaseSamples = Math.Max(1, (int)(_sampleRate * preset.ReleaseSeconds));
+		int sustainStart = attackSamples + decaySamples;
+		int sustainEnd = Math.Max(sustainStart, samples - releaseSamples);
+
+		for (int i = 0; i < samples; i++)
+		{
+			phase += phaseIncrement;
+			if (phase >= 1f)
+				phase -= 1f;
+
+			float osc = preset.Waveform switch
+			{
+				Waveform.Saw => (phase * 2f) - 1f,
+				Waveform.Square => phase < pulse ? 1f : -1f,
+				Waveform.Triangle => 1f - MathF.Abs((phase * 4f) % 4f - 2f),
+				Waveform.Noise => (float)(Main.rand.NextDouble() * 2.0 - 1.0),
+				_ => 0f
+			};
+
+			float envelope;
+			if (i < attackSamples)
+				envelope = i / (float)attackSamples;
+			else if (i < sustainStart)
+			{
+				float t = (i - attackSamples) / (float)Math.Max(1, decaySamples);
+				envelope = MathHelper.Lerp(1f, preset.SustainLevel, t);
+			}
+			else if (i < sustainEnd)
+				envelope = preset.SustainLevel;
+			else
+			{
+				float t = (i - sustainEnd) / (float)Math.Max(1, releaseSamples);
+				envelope = MathHelper.Lerp(preset.SustainLevel, 0f, t);
+			}
+
+			float input = osc * envelope * gain;
+			filterState += alpha * ((input + resonance * filterState) - filterState);
+			buffer[i] = MathHelper.Clamp(filterState, -1f, 1f);
+		}
+
+		return buffer;
+	}
+}
+
+public static class SubtractiveSynthDemo
+{
+	public static DynamicSoundEffectInstance CreateTwelveTetDemo(AudioDspProcessor? processor, SubtractiveSynthPreset preset, float rootFrequency = 220f, float noteDuration = 0.35f, float sampleRate = 44100f, bool autoPlay = true)
+	{
+		var synth = new SubtractiveSynth(sampleRate);
+		var instance = new DynamicSoundEffectInstance((int)sampleRate, AudioChannels.Mono);
+
+		for (int semitone = 0; semitone < 12; semitone++)
+		{
+			float frequency = rootFrequency * MathF.Pow(2f, semitone / 12f);
+			float[] note = synth.RenderNote(SubtractiveSynthPresets.All.ToList()[Main.rand.Next(SubtractiveSynthPresets.All.Count())], frequency, noteDuration);
+			processor?.SetSampleRate(sampleRate);
+			processor?.ProcessBuffer(note, 1);
+			instance.SubmitFloatBufferEXT(note);
+		}
+
+		if (autoPlay)
+			instance.Play();
+
+		return instance;
+	}
+}
+
+#endregion
 public static class TestDSP
 {
     public static readonly AudioDspProcessor Processor = new();
@@ -928,33 +1064,43 @@ public sealed class TestMusicFilterSystem : ModSystem
 
 
         _exampleInstance = baseEffect.CreateProcessedInstance(processor, out _processedSamples);
+        _exampleInstance = SubtractiveSynthDemo.CreateTwelveTetDemo(
+            processor,
+            SubtractiveSynthPresets.TriangleSoft,
+            rootFrequency: 110f,
+            noteDuration: 0.5f,
+            sampleRate: _sampleRate,
+            autoPlay: true);
     }
 
     public override void PostUpdateEverything()
     {
-        return;
+
         if (_exampleInstance == null || _processedSamples.Length == 0)
             return;
 
         float deltaTime = Main.frameRate <= 0 ? 1f / 60f : 1f / Main.frameRate;
         _timeAccumulator += deltaTime;
-
+        /*
         if (_timeAccumulator >= TriggerIntervalSeconds && _exampleInstance.PendingBufferCount < 2)
         {
             _timeAccumulator = 0f;
             _exampleInstance.SubmitFloatBufferEXT(_processedSamples);
         }
+        */
 
         _lowPassMaster.Cutoff = 10000f;
         _highPassMaster.Cutoff = 500f + (Main.player[Main.myPlayer].velocity.Length() * 1000f);
         _masterAmplifier.Gain = 7.2f;
-        foreach (SlotVector<ActiveSound>.ItemPair item in (IEnumerable<SlotVector<ActiveSound>.ItemPair>)SoundEngine.SoundPlayer._trackedSounds)
-        {
-            ActiveSound value = item.Value;
-            if (value.Sound == null || value.Sound.parentEffect == null)
-                continue;
-            value.Sound = value.Sound?.parentEffect.CreateProcessedInstance(TestDSP.Processor, out _, true);
-        }
+
+        if (_exampleInstance.State != SoundState.Playing)
+            _exampleInstance = SubtractiveSynthDemo.CreateTwelveTetDemo(
+            TestDSP.Processor,
+            SubtractiveSynthPresets.SquareLead,
+            rootFrequency: 110f,
+            noteDuration: 0.5f,
+            sampleRate: _sampleRate,
+            autoPlay: true);
     }
     
 #region The Dredge

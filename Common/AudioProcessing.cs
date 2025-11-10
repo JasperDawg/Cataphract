@@ -808,6 +808,30 @@ public enum Waveform
 	Noise
 }
 
+public enum LfoWaveform
+{
+	Sine,
+	Triangle,
+	Square,
+	Saw
+}
+
+public enum SynthModTarget
+{
+	None,
+	Frequency,
+	Amplitude,
+	PulseWidth,
+	FilterCutoff
+}
+
+public sealed record SynthModulator(
+	LfoWaveform Waveform,
+	SynthModTarget Target,
+	float RateHz,
+	float Depth,
+	float Offset = 0f);
+
 public sealed record SubtractiveSynthPreset(
 	string Name,
 	Waveform Waveform,
@@ -817,7 +841,9 @@ public sealed record SubtractiveSynthPreset(
 	float AttackSeconds = 0.02f,
 	float DecaySeconds = 0.12f,
 	float SustainLevel = 0.6f,
-	float ReleaseSeconds = 0.18f);
+	float ReleaseSeconds = 0.18f,
+	SynthModulator? Modulator = null,
+	bool EnablePwm = false);
 
 public static class SubtractiveSynthPresets
 {
@@ -832,6 +858,27 @@ public static class SubtractiveSynthPresets
 		"Triangle Soft", Waveform.Triangle, FilterCutoff: 2200f, FilterResonance: 0.1f,
 		AttackSeconds: 0.04f, DecaySeconds: 0.2f, SustainLevel: 0.8f, ReleaseSeconds: 0.4f);
 
+	public static readonly SubtractiveSynthPreset FilterSweepPad = new(
+		"Filter Sweep Pad", Waveform.Saw, FilterCutoff: 900f, FilterResonance: 0.45f,
+		AttackSeconds: 0.35f, DecaySeconds: 0.6f, SustainLevel: 0.65f, ReleaseSeconds: 0.9f,
+		Modulator: new SynthModulator(LfoWaveform.Sine, SynthModTarget.FilterCutoff, RateHz: 0.3f, Depth: 0.45f));
+
+	public static readonly SubtractiveSynthPreset VibratoLead = new(
+		"Vibrato Lead", Waveform.Triangle, FilterCutoff: 2600f, FilterResonance: 0.12f,
+		AttackSeconds: 0.015f, DecaySeconds: 0.12f, SustainLevel: 0.7f, ReleaseSeconds: 0.3f,
+		Modulator: new SynthModulator(LfoWaveform.Sine, SynthModTarget.Frequency, RateHz: 5.5f, Depth: 0.015f));
+
+	public static readonly SubtractiveSynthPreset PulseEnsemble = new(
+		"Pulse Ensemble", Waveform.Square, PulseWidth: 0.45f, FilterCutoff: 1600f, FilterResonance: 0.28f,
+		AttackSeconds: 0.08f, DecaySeconds: 0.26f, SustainLevel: 0.75f, ReleaseSeconds: 0.65f,
+		Modulator: new SynthModulator(LfoWaveform.Triangle, SynthModTarget.Amplitude, RateHz: 0.85f, Depth: 0.25f));
+
+	public static readonly SubtractiveSynthPreset PWMPad = new(
+		"PWM Pad", Waveform.Square, PulseWidth: 0.5f, FilterCutoff: 1400f, FilterResonance: 0.32f,
+		AttackSeconds: 0.3f, DecaySeconds: 0.7f, SustainLevel: 0.8f, ReleaseSeconds: 1.2f,
+		Modulator: new SynthModulator(LfoWaveform.Sine, SynthModTarget.PulseWidth, RateHz: 0.4f, Depth: 0.4f),
+		EnablePwm: true);
+
 	public static IEnumerable<SubtractiveSynthPreset> All
 	{
 		get
@@ -839,6 +886,10 @@ public static class SubtractiveSynthPresets
 			yield return ClassicSaw;
 			yield return SquareLead;
 			yield return TriangleSoft;
+			yield return FilterSweepPad;
+			yield return VibratoLead;
+			yield return PulseEnsemble;
+			yield return PWMPad;
 		}
 	}
 }
@@ -854,15 +905,12 @@ public sealed class SubtractiveSynth
 	{
 		int samples = Math.Max(1, (int)MathF.Round(durationSeconds * _sampleRate));
 		var buffer = new float[samples];
+		float basePhaseIncrement = frequency / _sampleRate;
 		float phase = 0f;
-		float phaseIncrement = frequency / _sampleRate;
-		float pulse = MathHelper.Clamp(preset.PulseWidth, 0.05f, 0.95f);
+		float basePulse = MathHelper.Clamp(preset.PulseWidth, 0.05f, 0.95f);
 
-		float filterState = 0f;
+		float baseCutoff = MathHelper.Clamp(preset.FilterCutoff, 50f, _sampleRate * 0.45f);
 		float resonance = MathHelper.Clamp(preset.FilterResonance, 0f, 0.95f);
-		float cutoff = MathHelper.Clamp(preset.FilterCutoff, 50f, _sampleRate * 0.45f);
-		float pole = MathF.Exp(-2f * MathF.PI * cutoff / _sampleRate);
-		float alpha = 1f - pole;
 
 		int attackSamples = Math.Max(1, (int)(_sampleRate * preset.AttackSeconds));
 		int decaySamples = Math.Max(1, (int)(_sampleRate * preset.DecaySeconds));
@@ -870,17 +918,41 @@ public sealed class SubtractiveSynth
 		int sustainStart = attackSamples + decaySamples;
 		int sustainEnd = Math.Max(sustainStart, samples - releaseSamples);
 
+		SynthModulator? mod = preset.Modulator;
+		float modPhase = 0f;
+		float modIncrement = mod != null ? mod.RateHz / _sampleRate : 0f;
+
+		float filterState = 0f;
+
 		for (int i = 0; i < samples; i++)
 		{
+			float modValue = 0f;
+			if (mod != null && mod.Target != SynthModTarget.None)
+			{
+				modPhase += modIncrement;
+				if (modPhase >= 1f)
+					modPhase -= 1f;
+				float lfo = EvaluateLfo(mod.Waveform, modPhase);
+				modValue = lfo * mod.Depth + mod.Offset;
+			}
+
+			float phaseIncrement = basePhaseIncrement;
+			if (mod != null && mod.Target == SynthModTarget.Frequency)
+				phaseIncrement = Math.Max(basePhaseIncrement * (1f + modValue), 1e-6f);
+
 			phase += phaseIncrement;
 			if (phase >= 1f)
 				phase -= 1f;
+
+			float pulse = basePulse;
+			if (preset.EnablePwm && mod != null && mod.Target == SynthModTarget.PulseWidth)
+				pulse = MathHelper.Clamp(basePulse + modValue * 0.5f, 0.05f, 0.95f);
 
 			float osc = preset.Waveform switch
 			{
 				Waveform.Saw => (phase * 2f) - 1f,
 				Waveform.Square => phase < pulse ? 1f : -1f,
-				Waveform.Triangle => 1f - MathF.Abs((phase * 4f) % 4f - 2f),
+				Waveform.Triangle => 2f * MathF.Abs(2f * ((phase % 1f) - 0.5f)) - 1f,
 				Waveform.Noise => (float)(Main.rand.NextDouble() * 2.0 - 1.0),
 				_ => 0f
 			};
@@ -901,18 +973,66 @@ public sealed class SubtractiveSynth
 				envelope = MathHelper.Lerp(preset.SustainLevel, 0f, t);
 			}
 
-			float input = osc * envelope * gain;
+			float moddedGain = gain;
+			if (mod != null && mod.Target == SynthModTarget.Amplitude)
+				moddedGain = MathHelper.Clamp(gain * (1f + modValue), 0f, 1.5f);
+
+			float currentCutoff = baseCutoff;
+			if (mod != null && mod.Target == SynthModTarget.FilterCutoff)
+				currentCutoff = MathHelper.Clamp(baseCutoff * (1f + modValue), 20f, _sampleRate * 0.45f);
+
+			float pole = MathF.Exp(-2f * MathF.PI * currentCutoff / _sampleRate);
+			float alpha = 1f - pole;
+
+			float input = osc * envelope * moddedGain;
 			filterState += alpha * ((input + resonance * filterState) - filterState);
 			buffer[i] = MathHelper.Clamp(filterState, -1f, 1f);
 		}
 
 		return buffer;
 	}
+
+	private static float EvaluateLfo(LfoWaveform waveform, float phase)
+	{
+		float t = phase - MathF.Floor(phase);
+		return waveform switch
+		{
+			LfoWaveform.Sine => MathF.Sin(t * MathHelper.TwoPi),
+			LfoWaveform.Triangle => 2f * MathF.Abs(2f * (t - 0.5f)) - 1f,
+			LfoWaveform.Square => t < 0.5f ? 1f : -1f,
+			LfoWaveform.Saw => 2f * t - 1f,
+			_ => 0f
+		};
+	}
 }
+
+public sealed class PwmSynth
+{
+	private readonly SubtractiveSynth _inner;
+
+	public PwmSynth(float sampleRate = 44100f) => _inner = new SubtractiveSynth(sampleRate);
+
+	public float[] RenderPwm(SubtractiveSynthPreset basePreset, float frequency, float durationSeconds, float lfoRateHz, float depth, float gain = 0.7f)
+	{
+		var preset = basePreset with
+		{
+			EnablePwm = true,
+			Modulator = new SynthModulator(LfoWaveform.Sine, SynthModTarget.PulseWidth, lfoRateHz, depth)
+		};
+		return _inner.RenderNote(preset, frequency, durationSeconds, gain);
+	}
+}
+#endregion
 
 public static class SubtractiveSynthDemo
 {
-	public static DynamicSoundEffectInstance CreateTwelveTetDemo(AudioDspProcessor? processor, SubtractiveSynthPreset preset, float rootFrequency = 220f, float noteDuration = 0.35f, float sampleRate = 44100f, bool autoPlay = true)
+	public static DynamicSoundEffectInstance CreateTwelveTetDemo(
+		AudioDspProcessor? processor,
+		SubtractiveSynthPreset preset,
+		float rootFrequency = 220f,
+		float noteDuration = 0.35f,
+		float sampleRate = 44100f,
+		bool autoPlay = true)
 	{
 		var synth = new SubtractiveSynth(sampleRate);
 		var instance = new DynamicSoundEffectInstance((int)sampleRate, AudioChannels.Mono);
@@ -920,7 +1040,39 @@ public static class SubtractiveSynthDemo
 		for (int semitone = 0; semitone < 12; semitone++)
 		{
 			float frequency = rootFrequency * MathF.Pow(2f, semitone / 12f);
-			float[] note = synth.RenderNote(SubtractiveSynthPresets.All.ToList()[Main.rand.Next(SubtractiveSynthPresets.All.Count())], frequency, noteDuration);
+			float[] note = synth.RenderNote(preset, frequency, noteDuration);
+			processor?.SetSampleRate(sampleRate);
+			processor?.ProcessBuffer(note, 1);
+			instance.SubmitFloatBufferEXT(note);
+		}
+
+		if (autoPlay)
+			instance.Play();
+
+		return instance;
+	}
+
+	public static DynamicSoundEffectInstance CreateMelodyDemo(
+		AudioDspProcessor? processor,
+		SubtractiveSynthPreset preset,
+		float rootFrequency,
+		ReadOnlySpan<(int Semitone, float Duration)> melody,
+		float noteGain = 0.7f,
+		float sampleRate = 44100f,
+		bool autoPlay = true)
+	{
+		if (melody.IsEmpty)
+			throw new ArgumentException("Melody cannot be empty.", nameof(melody));
+
+		var synth = new SubtractiveSynth(sampleRate);
+		var instance = new DynamicSoundEffectInstance((int)sampleRate, AudioChannels.Mono);
+
+		for (int i = 0; i < melody.Length; i++)
+		{
+			var (semitone, duration) = melody[i];
+			float noteDuration = Math.Max(duration, 0.05f);
+			float frequency = rootFrequency * MathF.Pow(2f, semitone / 12f);
+			float[] note = synth.RenderNote(preset, frequency, noteDuration, noteGain);
 			processor?.SetSampleRate(sampleRate);
 			processor?.ProcessBuffer(note, 1);
 			instance.SubmitFloatBufferEXT(note);
@@ -933,7 +1085,6 @@ public static class SubtractiveSynthDemo
 	}
 }
 
-#endregion
 public static class TestDSP
 {
     public static readonly AudioDspProcessor Processor = new();
@@ -1016,7 +1167,7 @@ public sealed class TestMusicFilterSystem : ModSystem
     private readonly DelayEffect _delay = new() { DelayMilliseconds = 180f, Feedback = 0.25f, Wet = 0.15f };
     private readonly StereoWidenerEffect _widener = new() { Width = 0.35f };
     private readonly SoftClipSaturator _saturator = new() { Drive = 1.80f };
-    private readonly BitCrusherEffect _bitTexture = new() { Bits = 14, DownsampleFactor = 1f };
+    private readonly BitCrusherEffect _bitTexture = new() { Bits = 8, DownsampleFactor = 1f };
     private readonly LowPassOnePoleFilter _lowPassMaster = new() { Cutoff = 20000f };
     private readonly HighPassOnePoleFilter _highPassMaster = new() { Cutoff = 200f };
     private readonly BandPassBiquadFilter _masterBand = new() { Frequency = 1000f, Q = 1f };
@@ -1024,6 +1175,7 @@ public sealed class TestMusicFilterSystem : ModSystem
     private readonly ReverseAudioEffect _reverseEffect = new();
 
     private DynamicSoundEffectInstance? _exampleInstance;
+    private DynamicSoundEffectInstance? _melodyInstance;
     private float _timeAccumulator;
     private float _sampleRate = SampleRateDefault;
     private int _channelCount = ChannelCountDefault;
@@ -1032,6 +1184,19 @@ public sealed class TestMusicFilterSystem : ModSystem
     private const float SampleRateDefault = 44100f;
     private const int ChannelCountDefault = 2;
     private const float TriggerIntervalSeconds = 2.75f;
+    private static readonly (int Semitone, float Duration)[] DemoMelody =
+    {
+        (0, 0.40f),
+        (2, 0.35f),
+        (4, 0.35f),
+        (5, 0.25f),
+        (7, 0.50f),
+        (5, 0.30f),
+        (4, 0.30f),
+        (2, 0.45f),
+        (9, 1.50f),
+        (7, 1.75f)
+    };
 
     public override void OnModLoad()
     {
@@ -1059,16 +1224,19 @@ public sealed class TestMusicFilterSystem : ModSystem
         _bitTexture.DownsampleFactor = 12f;
 
 
-        processor.AddEffect(_saturator);
-
+        //processor.AddEffect(_saturator);
+        processor.AddEffect(_widener);
 
 
         _exampleInstance = baseEffect.CreateProcessedInstance(processor, out _processedSamples);
-        _exampleInstance = SubtractiveSynthDemo.CreateTwelveTetDemo(
+
+
+        _melodyInstance = SubtractiveSynthDemo.CreateMelodyDemo(
             processor,
-            SubtractiveSynthPresets.TriangleSoft,
-            rootFrequency: 110f,
-            noteDuration: 0.5f,
+            SubtractiveSynthPresets.PulseEnsemble,
+            rootFrequency: 220f,
+            melody: DemoMelody,
+            noteGain: 0.65f,
             sampleRate: _sampleRate,
             autoPlay: true);
     }
@@ -1095,12 +1263,22 @@ public sealed class TestMusicFilterSystem : ModSystem
 
         if (_exampleInstance.State != SoundState.Playing)
             _exampleInstance = SubtractiveSynthDemo.CreateTwelveTetDemo(
-            TestDSP.Processor,
-            SubtractiveSynthPresets.SquareLead,
-            rootFrequency: 110f,
-            noteDuration: 0.5f,
-            sampleRate: _sampleRate,
-            autoPlay: true);
+                TestDSP.Processor,
+                SubtractiveSynthPresets.SquareLead,
+                rootFrequency: 110f,
+                noteDuration: 0.5f,
+                sampleRate: _sampleRate,
+                autoPlay: true);
+
+        if (_melodyInstance != null && _melodyInstance.State != SoundState.Playing)
+            _melodyInstance = SubtractiveSynthDemo.CreateMelodyDemo(
+                TestDSP.Processor,
+                SubtractiveSynthPresets.PWMPad,
+                rootFrequency: 220f,
+                melody: DemoMelody,
+                noteGain: 0.65f,
+                sampleRate: _sampleRate,
+                autoPlay: true);
     }
     
 #region The Dredge
